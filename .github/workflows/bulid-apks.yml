@@ -1,141 +1,110 @@
-name: SastaGo - Build Customer and Admin APKs
+name: SastaGo APK Builder
 
 on:
-workflow_dispatch:
-push:
-paths:
-- 'Customer-App.zip'
-- 'Admin-App.zip'
-- '.github/workflows/build-apks.yml'
+  workflow_dispatch:
 
 jobs:
-build-customer:
-name: Build Customer APK
-runs-on: ubuntu-latest
+  build-customer:
+    name: Build Customer APK
+    runs-on: ubuntu-latest
 
-steps:
-  - name: Checkout repository
-    uses: actions/checkout@v4
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-  - name: Setup Java
-    uses: actions/setup-java@v4
-    with:
-      distribution: temurin
-      java-version: '21'
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
 
-  - name: Setup Android SDK
-    uses: android-actions/setup-android@v3
+      - name: Setup Android
+        uses: android-actions/setup-android@v3
 
-  - name: Extract Customer App
-    run: |
-      mkdir -p customer-src www
-      unzip -q Customer-App.zip -d customer-src
+      - name: Extract Customer Files
+        run: |
+          mkdir -p customer-src www
+          unzip -q Customer-App.zip -d customer-src
+          ENTRY=$(find customer-src -iname "Intro.html" | head -n 1)
+          if [ -z "$ENTRY" ]; then
+            ENTRY=$(find customer-src -iname "customer.html" | head -n 1)
+          fi
+          if [ -z "$ENTRY" ]; then
+            echo "Customer HTML not found"
+            exit 1
+          fi
+          cp -r "$(dirname "$ENTRY")"/. www/
+          if [ -f www/Intro.html ]; then
+            cp www/Intro.html www/index.html
+          else
+            cp "$ENTRY" www/index.html
+          fi
 
-      ENTRY=$(find customer-src -iname "Intro.html" -o -iname "intro.html" | head -n 1)
+      - name: Setup Capacitor
+        run: |
+          npm init -y
+          npm install @capacitor/core @capacitor/cli @capacitor/android
+          echo '{"appId":"pk.sastago.customer","appName":"SastaGo Customer","webDir":"www"}' > capacitor.config.json
+          npx cap add android
+          npx cap sync android
 
-      if [ -z "$ENTRY" ]; then
-        ENTRY=$(find customer-src -iname "customer.html" | head -n 1)
-      fi
+      - name: Build APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug
 
-      if [ -z "$ENTRY" ]; then
-        echo "Customer HTML file not found"
-        exit 1
-      fi
+      - name: Upload Customer APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: SastaGo-Customer-APK
+          path: android/app/build/outputs/apk/debug/app-debug.apk
 
-      cp -r "$(dirname "$ENTRY")"/. www/
+  build-admin:
+    name: Build Admin APK
+    runs-on: ubuntu-latest
 
-      if [ -f www/Intro.html ]; then
-        cp www/Intro.html www/index.html
-      elif [ -f www/intro.html ]; then
-        cp www/intro.html www/index.html
-      else
-        cp "$ENTRY" www/index.html
-      fi
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-  - name: Create Capacitor Project
-    run: |
-      npm init -y
-      npm install @capacitor/core @capacitor/cli @capacitor/android
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
 
-      cat > capacitor.config.json <<'EOF'
-      {
-        "appId": "pk.sastago.customer",
-        "appName": "SastaGo Customer",
-        "webDir": "www"
-      }
-      EOF
+      - name: Setup Android
+        uses: android-actions/setup-android@v3
 
-      npx cap add android
-      npx cap sync android
+      - name: Extract Admin Files
+        run: |
+          mkdir -p admin-src www
+          unzip -q Admin-App.zip -d admin-src
+          ENTRY=$(find admin-src -iname "admin.html" | head -n 1)
+          if [ -z "$ENTRY" ]; then
+            echo "Admin HTML not found"
+            exit 1
+          fi
+          cp -r "$(dirname "$ENTRY")"/. www/
+          cp "$ENTRY" www/index.html
 
-  - name: Build Customer APK
-    run: |
-      cd android
-      chmod +x gradlew
-      ./gradlew assembleDebug
+      - name: Setup Capacitor
+        run: |
+          npm init -y
+          npm install @capacitor/core @capacitor/cli @capacitor/android
+          echo '{"appId":"pk.sastago.admin","appName":"SastaGo Admin","webDir":"www"}' > capacitor.config.json
+          npx cap add android
+          npx cap sync android
 
-  - name: Upload Customer APK
-    uses: actions/upload-artifact@v4
-    with:
-      name: SastaGo-Customer-APK
-      path: android/app/build/outputs/apk/debug/app-debug.apk
+      - name: Build APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug
 
-build-admin:
-name: Build Admin APK
-runs-on: ubuntu-latest
-
-steps:
-  - name: Checkout repository
-    uses: actions/checkout@v4
-
-  - name: Setup Java
-    uses: actions/setup-java@v4
-    with:
-      distribution: temurin
-      java-version: '21'
-
-  - name: Setup Android SDK
-    uses: android-actions/setup-android@v3
-
-  - name: Extract Admin App
-    run: |
-      mkdir -p admin-src www
-      unzip -q Admin-App.zip -d admin-src
-
-      ENTRY=$(find admin-src -iname "admin.html" | head -n 1)
-
-      if [ -z "$ENTRY" ]; then
-        echo "Admin HTML file not found"
-        exit 1
-      fi
-
-      cp -r "$(dirname "$ENTRY")"/. www/
-      cp "$ENTRY" www/index.html
-
-  - name: Create Capacitor Project
-    run: |
-      npm init -y
-      npm install @capacitor/core @capacitor/cli @capacitor/android
-
-      cat > capacitor.config.json <<'EOF'
-      {
-        "appId": "pk.sastago.admin",
-        "appName": "SastaGo Admin",
-        "webDir": "www"
-      }
-      EOF
-
-      npx cap add android
-      npx cap sync android
-
-  - name: Build Admin APK
-    run: |
-      cd android
-      chmod +x gradlew
-      ./gradlew assembleDebug
-
-  - name: Upload Admin APK
-    uses: actions/upload-artifact@v4
-    with:
-      name: SastaGo-Admin-APK
-      path: android/app/build/outputs/apk/debug/app-debug.apk
+      - name: Upload Admin APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: SastaGo-Admin-APK
+          path: android/app/build/outputs/apk/debug/app-debug.apk
