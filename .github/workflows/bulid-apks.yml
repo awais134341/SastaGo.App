@@ -1,51 +1,92 @@
-name: SastaGo Android APK Build
+name: SastaGo Customer and Admin APK
 
 on:
-  workflow_dispatch:
-  push:
-    branches:
-      - main
+workflow_dispatch:
+push:
+branches:
+- main
 
 jobs:
-  build:
-    name: Build SastaGo APK
-    runs-on: ubuntu-latest
+customer-apk:
+name: Build Customer App
+runs-on: ubuntu-latest
 
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
+defaults:
+  run:
+    working-directory: Customer-App
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
+steps:
+  - name: Checkout
+    uses: actions/checkout@v4
 
-      - name: Install Dependencies
-        run: npm ci
+  - name: Setup Node.js
+    uses: actions/setup-node@v4
+    with:
+      node-version: 20
 
-      - name: Build Web App
-        run: npm run build
+  - name: Install Dependencies
+    run: npm ci
 
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
+  - name: Build Customer App
+    run: npm run build
 
-      - name: Build Android APK
-        run: |
-          if [ ! -d "android" ]; then
-            echo "ERROR: Android folder not found!"
-            exit 1
-          fi
-          cd android
-          chmod +x gradlew
-          ./gradlew assembleDebug
+  - name: Setup Java
+    uses: actions/setup-java@v4
+    with:
+      distribution: temurin
+      java-version: '17'
 
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: SastaGo-APK
-          path: android/app/build/outputs/apk/debug/*.apk
-          if-no-files-found: error
+  - name: Build Customer APK
+    run: |
+      cd android
+      chmod +x gradlew
+      ./gradlew assembleDebug
+
+  - name: Upload Customer APK
+    uses: actions/upload-artifact@v4
+    with:
+      name: SastaGo-Customer-APK
+      path: Customer-App/android/app/build/outputs/apk/debug/*.apk
+      if-no-files-found: error
+
+admin-apk:
+name: Build Admin App
+runs-on: ubuntu-latest
+
+defaults:
+  run:
+    working-directory: Admin-App
+
+steps:
+  - name: Checkout
+    uses: actions/checkout@v4
+
+  - name: Setup Node.js
+    uses: actions/setup-node@v4
+    with:
+      node-version: 20
+
+  - name: Install Dependencies
+    run: npm ci
+
+  - name: Build Admin App
+    run: npm run build
+
+  - name: Setup Java
+    uses: actions/setup-java@v4
+    with:
+      distribution: temurin
+      java-version: '17'
+
+  - name: Build Admin APK
+    run: |
+      cd android
+      chmod +x gradlew
+      ./gradlew assembleDebug
+
+  - name: Upload Admin APK
+    uses: actions/upload-artifact@v4
+    with:
+      name: SastaGo-Admin-APK
+      path: Admin-App/android/app/build/outputs/apk/debug/*.apk
+      if-no-files-found: error
