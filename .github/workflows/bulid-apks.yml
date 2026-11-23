@@ -10,11 +10,12 @@ jobs:
   build-customer:
     name: Build Customer APK
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup Node
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -34,34 +35,61 @@ jobs:
       - name: Extract Customer ZIP
         run: |
           test -f Customer-App.zip || { echo 'Customer-App.zip missing from repository root'; exit 1; }
+          rm -rf customer-src www
           mkdir -p customer-src www
           unzip -q Customer-App.zip -d customer-src
-          chmod -R u+rwX customer-src
-          ENTRY=$(find customer-src -type f -iname 'Intro.html' | head -n 1)
-          if [ -z "$ENTRY" ]; then ENTRY=$(find customer-src -type f -iname 'customer.html' | head -n 1); fi
-          if [ -z "$ENTRY" ]; then echo 'Customer entry HTML not found'; find customer-src -type f; exit 1; fi
-          cp -r "$(dirname "$ENTRY")"/. www/
-          chmod -R u+rwX www/
-          if [ -f www/Intro.html ]; then cp www/Intro.html www/index.html; \
-          elif [ -f www/intro.html ]; then cp www/intro.html www/index.html; \
-          elif [ -f www/customer.html ]; then cp www/customer.html www/index.html; \
-          else echo 'Customer entry page could not be prepared'; exit 1; fi
-          test -f www/customer.js
-          test -f www/customer-location.js
-          test -f www/customer-bill-tools.js
+          chmod -R a+rX,u+w customer-src
 
-      - name: Install Capacitor and Native Plugins
+          ENTRY=$(find customer-src -type f -iname 'Intro.html' | head -n 1)
+          if [ -z "$ENTRY" ]; then
+            ENTRY=$(find customer-src -type f -iname 'customer.html' | head -n 1)
+          fi
+          if [ -z "$ENTRY" ]; then
+            echo 'Customer entry HTML not found in Customer-App.zip'
+            find customer-src -type f
+            exit 1
+          fi
+
+          cp -r "$(dirname "$ENTRY")"/. www/
+          chmod -R a+rX,u+w www
+
+          if [ -f www/Intro.html ]; then
+            cp www/Intro.html www/index.html
+          elif [ -f www/intro.html ]; then
+            cp www/intro.html www/index.html
+          elif [ -f www/customer.html ]; then
+            cp www/customer.html www/index.html
+          else
+            echo 'Could not prepare Customer index.html'
+            exit 1
+          fi
+
+          test -f www/customer.js || { echo 'www/customer.js missing'; exit 1; }
+          test -f www/customer-location.js || { echo 'www/customer-location.js missing'; exit 1; }
+          test -f www/customer-bill-tools.js || { echo 'www/customer-bill-tools.js missing'; exit 1; }
+
+      - name: Install Capacitor 7 and Compatible Customer Plugins
         run: |
           npm init -y
-          npm install @capacitor/core@7 @capacitor/cli@7 @capacitor/android@7 @capacitor/geolocation@7 @capgo/capacitor-file-sharer @capgo/capacitor-printer
+          npm install --save-exact \
+            @capacitor/core@7 \
+            @capacitor/cli@7 \
+            @capacitor/android@7 \
+            @capacitor/geolocation@7 \
+            @capgo/capacitor-file-sharer@7 \
+            @capgo/capacitor-printer@7
+
           printf '%s\n' '{"appId":"pk.sastago.customer","appName":"SastaGo Customer","webDir":"www"}' > capacitor.config.json
           npx cap add android
           npx cap sync android
 
-      - name: Ensure Android Location Permissions
+      - name: Add Android Location Permissions
         run: |
           MANIFEST=android/app/src/main/AndroidManifest.xml
-          sed -i '/<application/i\    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />\n    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />' "$MANIFEST"
+          grep -q 'android.permission.ACCESS_COARSE_LOCATION' "$MANIFEST" || \
+            sed -i '/<application/i\    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />' "$MANIFEST"
+          grep -q 'android.permission.ACCESS_FINE_LOCATION' "$MANIFEST" || \
+            sed -i '/<application/i\    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />' "$MANIFEST"
 
       - name: Build Customer APK
         run: |
@@ -79,11 +107,12 @@ jobs:
   build-admin:
     name: Build Admin APK
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup Node
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -103,21 +132,33 @@ jobs:
       - name: Extract Admin ZIP
         run: |
           test -f Admin-App.zip || { echo 'Admin-App.zip missing from repository root'; exit 1; }
+          rm -rf admin-src www
           mkdir -p admin-src www
           unzip -q Admin-App.zip -d admin-src
-          chmod -R u+rwX admin-src
-          ENTRY=$(find admin-src -type f -iname 'admin.html' | head -n 1)
-          if [ -z "$ENTRY" ]; then echo 'Admin HTML file not found'; find admin-src -type f; exit 1; fi
-          cp -r "$(dirname "$ENTRY")"/. www/
-          chmod -R u+rwX www/
-          cp "$ENTRY" www/index.html
-          test -f www/admin.js
-          test -f www/admin-bill-tools.js
+          chmod -R a+rX,u+w admin-src
 
-      - name: Install Capacitor
+          ENTRY=$(find admin-src -type f -iname 'admin.html' | head -n 1)
+          if [ -z "$ENTRY" ]; then
+            echo 'Admin HTML file not found in Admin-App.zip'
+            find admin-src -type f
+            exit 1
+          fi
+
+          cp -r "$(dirname "$ENTRY")"/. www/
+          chmod -R a+rX,u+w www
+          cp "$ENTRY" www/index.html
+
+          test -f www/admin.js || { echo 'www/admin.js missing'; exit 1; }
+          test -f www/admin-bill-tools.js || { echo 'www/admin-bill-tools.js missing'; exit 1; }
+
+      - name: Install Capacitor 7
         run: |
           npm init -y
-          npm install @capacitor/core@7 @capacitor/cli@7 @capacitor/android@7
+          npm install --save-exact \
+            @capacitor/core@7 \
+            @capacitor/cli@7 \
+            @capacitor/android@7
+
           printf '%s\n' '{"appId":"pk.sastago.admin","appName":"SastaGo Admin","webDir":"www"}' > capacitor.config.json
           npx cap add android
           npx cap sync android
