@@ -1,11 +1,14 @@
-name: SastaGo APK Builder
+name: SastaGo Android APK Build
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
 
 jobs:
-  build-customer:
-    name: Build Customer APK
+  build:
+    name: Build SastaGo APK
     runs-on: ubuntu-latest
 
     steps:
@@ -15,218 +18,34 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 20
+          cache: npm
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Build Web App
+        run: npm run build
 
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 21
+          java-version: '17'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android SDK Packages
+      - name: Build Android APK
         run: |
-          sdkmanager "platforms;android-35"
-          sdkmanager "build-tools;35.0.0"
-
-      - name: Extract Customer App
-        run: |
-          mkdir -p customer-src
-          unzip -q Customer-App.zip -d customer-src
-
-      - name: Prepare Customer Web Files
-        run: |
-          mkdir -p www
-
-          ENTRY=$(find customer-src -type f -iname "Intro.html" | head -n 1)
-
-          if [ -z "$ENTRY" ]; then
-            ENTRY=$(find customer-src -type f -iname "index.html" | head -n 1)
-          fi
-
-          if [ -z "$ENTRY" ]; then
-            echo "Customer HTML file not found!"
+          if [ ! -d "android" ]; then
+            echo "ERROR: Android folder not found!"
             exit 1
           fi
-
-          WEB_DIR=$(dirname "$ENTRY")
-          echo "Customer web directory: $WEB_DIR"
-
-          cp -a "$WEB_DIR"/. www/
-
-          if [ -f "$WEB_DIR/Intro.html" ]; then
-            cp "$WEB_DIR/Intro.html" www/index.html
-          fi
-
-          if [ ! -f www/customer-location.js ]; then
-            echo "customer-location.js not found!"
-            exit 1
-          fi
-
-          if [ ! -f www/customer-gps-capacitor.js ]; then
-            echo "customer-gps-capacitor.js not found!"
-            exit 1
-          fi
-
-      - name: Install Customer Capacitor and GPS Packages
-        run: |
-          npm init -y
-          npm install @capacitor/core@7 @capacitor/cli@7 @capacitor/android@7 @capacitor/geolocation@7
-          npm install --save-dev esbuild
-
-      - name: Bundle Customer GPS JavaScript
-        run: |
-          npx esbuild www/customer-location.js \
-            --bundle \
-            --format=esm \
-            --platform=browser \
-            --outfile=www/customer-location.bundle.js
-
-      - name: Update Customer HTML Script
-        run: |
-          find www -type f \( -iname "*.html" -o -iname "*.htm" \) \
-            -exec sed -i 's/customer-location\.js/customer-location.bundle.js/g' {} +
-
-          echo "Customer GPS bundle reference updated."
-
-      - name: Create Capacitor Configuration
-        run: |
-          cat > capacitor.config.json <<'EOF'
-          {
-            "appId": "pk.sastago.customer",
-            "appName": "SastaGo",
-            "webDir": "www"
-          }
-          EOF
-
-      - name: Add Android Platform
-        run: |
-          npx cap add android
-          npx cap sync android
-
-      - name: Add Android Location Permissions
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          manifest = Path("android/app/src/main/AndroidManifest.xml")
-          content = manifest.read_text()
-
-          permissions = [
-              '    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />',
-              '    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />'
-          ]
-
-          for permission in permissions:
-              permission_name = permission.split('"')[1]
-              if permission_name not in content:
-                  content = content.replace(
-                      "<application",
-                      permission + "\n    <application",
-                      1
-                  )
-
-          manifest.write_text(content)
-          PY
-
-      - name: Build Customer APK
-        run: |
           cd android
           chmod +x gradlew
           ./gradlew assembleDebug
 
-      - name: Upload Customer APK
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: SastaGo-Customer-APK
-          path: android/app/build/outputs/apk/debug/app-debug.apk
-
-  build-admin:
-    name: Build Admin APK
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 21
-
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android SDK Packages
-        run: |
-          sdkmanager "platforms;android-35"
-          sdkmanager "build-tools;35.0.0"
-
-      - name: Extract Admin App
-        run: |
-          mkdir -p admin-src
-          unzip -q Admin-App.zip -d admin-src
-
-      - name: Prepare Admin Web Files
-        run: |
-          mkdir -p www
-
-          ENTRY=$(find admin-src -type f -iname "Intro.html" | head -n 1)
-
-          if [ -z "$ENTRY" ]; then
-            ENTRY=$(find admin-src -type f -iname "index.html" | head -n 1)
-          fi
-
-          if [ -z "$ENTRY" ]; then
-            echo "Admin HTML file not found!"
-            exit 1
-          fi
-
-          WEB_DIR=$(dirname "$ENTRY")
-          echo "Admin web directory: $WEB_DIR"
-
-          cp -a "$WEB_DIR"/. www/
-
-          if [ -f "$WEB_DIR/Intro.html" ]; then
-            cp "$WEB_DIR/Intro.html" www/index.html
-          fi
-
-      - name: Install Admin Capacitor Packages
-        run: |
-          npm init -y
-          npm install @capacitor/core@7 @capacitor/cli@7 @capacitor/android@7
-
-      - name: Create Admin Capacitor Configuration
-        run: |
-          cat > capacitor.config.json <<'EOF'
-          {
-            "appId": "pk.sastago.admin",
-            "appName": "SastaGo Admin",
-            "webDir": "www"
-          }
-          EOF
-
-      - name: Add Android Platform
-        run: |
-          npx cap add android
-          npx cap sync android
-
-      - name: Build Admin APK
-        run: |
-          cd android
-          chmod +x gradlew
-          ./gradlew assembleDebug
-
-      - name: Upload Admin APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: SastaGo-Admin-APK
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          name: SastaGo-APK
+          path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
