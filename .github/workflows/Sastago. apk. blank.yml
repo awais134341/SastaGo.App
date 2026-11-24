@@ -80,6 +80,11 @@ jobs:
           test -f www/customer-location.js
           test -f www/customer-bill-tools.js
 
+          test -f www/app-icons/customer-icon.png || {
+            echo "Customer icon missing: app-icons/customer-icon.png"
+            exit 1
+          }
+
           echo "Customer files extracted successfully"
 
       - name: Install Capacitor 8 and Native Plugins
@@ -88,10 +93,72 @@ jobs:
 
           npm install @capacitor/core@8 @capacitor/cli@8 @capacitor/android@8 @capacitor/geolocation@8 @capgo/capacitor-file-sharer@8 @capgo/capacitor-printer@8
 
-          printf '%s\n' '{"appId":"pk.sastago.customer","appName":"SastaGo Customer","webDir":"www"}' > capacitor.config.json
+          printf '%s\n' '{"appId":"pk.sastago.customer","appName":"SastaGo","webDir":"www"}' > capacitor.config.json
 
           npx cap add android
           npx cap sync android
+
+      - name: Set Customer App Name and Icon
+        run: |
+          set -e
+
+          python3 -m pip install Pillow
+
+          mkdir -p android/app/src/main/res
+
+          python3 - <<'PY'
+          from PIL import Image
+          from pathlib import Path
+
+          source = Path("www/app-icons/customer-icon.png")
+
+          if not source.exists():
+              raise SystemExit("Customer icon not found")
+
+          img = Image.open(source).convert("RGBA")
+
+          if img.size != (1024, 1024):
+              raise SystemExit(f"Icon must be 1024x1024, found {img.size}")
+
+          res = Path("android/app/src/main/res")
+
+          sizes = {
+              "mipmap-mdpi": 48,
+              "mipmap-hdpi": 72,
+              "mipmap-xhdpi": 96,
+              "mipmap-xxhdpi": 144,
+              "mipmap-xxxhdpi": 192,
+          }
+
+          for folder, size in sizes.items():
+              target = res / folder
+              target.mkdir(parents=True, exist_ok=True)
+
+              icon = img.resize((size, size), Image.Resampling.LANCZOS)
+              icon.save(target / "ic_launcher.png")
+              icon.save(target / "ic_launcher_round.png")
+
+          # Remove adaptive icon XML so the supplied full PNG is used.
+          adaptive = res / "mipmap-anydpi-v26"
+          if adaptive.exists():
+              import shutil
+              shutil.rmtree(adaptive)
+
+          print("Customer launcher icons generated.")
+          PY
+
+          STRINGS=android/app/src/main/res/values/strings.xml
+          mkdir -p android/app/src/main/res/values
+
+          if [ ! -f "$STRINGS" ]; then
+            printf '%s\n' '<resources></resources>' > "$STRINGS"
+          fi
+
+          if grep -q 'name="app_name"' "$STRINGS"; then
+            sed -i 's|<string name="app_name">.*</string>|<string name="app_name">SastaGo</string>|' "$STRINGS"
+          else
+            sed -i 's|</resources>|    <string name="app_name">SastaGo</string>\n</resources>|' "$STRINGS"
+          fi
 
       - name: Ensure Android Location Permissions
         run: |
@@ -175,6 +242,11 @@ jobs:
           test -f www/admin.js
           test -f www/admin-bill-tools.js
 
+          test -f www/app-icons/admin-icon.png || {
+            echo "Admin icon missing: app-icons/admin-icon.png"
+            exit 1
+          }
+
           echo "Admin files extracted successfully"
 
       - name: Install Capacitor 8
@@ -187,6 +259,67 @@ jobs:
 
           npx cap add android
           npx cap sync android
+
+      - name: Set Admin App Name and Icon
+        run: |
+          set -e
+
+          python3 -m pip install Pillow
+
+          mkdir -p android/app/src/main/res
+
+          python3 - <<'PY'
+          from PIL import Image
+          from pathlib import Path
+
+          source = Path("www/app-icons/admin-icon.png")
+
+          if not source.exists():
+              raise SystemExit("Admin icon not found")
+
+          img = Image.open(source).convert("RGBA")
+
+          if img.size != (1024, 1024):
+              raise SystemExit(f"Icon must be 1024x1024, found {img.size}")
+
+          res = Path("android/app/src/main/res")
+
+          sizes = {
+              "mipmap-mdpi": 48,
+              "mipmap-hdpi": 72,
+              "mipmap-xhdpi": 96,
+              "mipmap-xxhdpi": 144,
+              "mipmap-xxxhdpi": 192,
+          }
+
+          for folder, size in sizes.items():
+              target = res / folder
+              target.mkdir(parents=True, exist_ok=True)
+
+              icon = img.resize((size, size), Image.Resampling.LANCZOS)
+              icon.save(target / "ic_launcher.png")
+              icon.save(target / "ic_launcher_round.png")
+
+          adaptive = res / "mipmap-anydpi-v26"
+          if adaptive.exists():
+              import shutil
+              shutil.rmtree(adaptive)
+
+          print("Admin launcher icons generated.")
+          PY
+
+          STRINGS=android/app/src/main/res/values/strings.xml
+          mkdir -p android/app/src/main/res/values
+
+          if [ ! -f "$STRINGS" ]; then
+            printf '%s\n' '<resources></resources>' > "$STRINGS"
+          fi
+
+          if grep -q 'name="app_name"' "$STRINGS"; then
+            sed -i 's|<string name="app_name">.*</string>|<string name="app_name">SastaGo Admin</string>|' "$STRINGS"
+          else
+            sed -i 's|</resources>|    <string name="app_name">SastaGo Admin</string>\n</resources>|' "$STRINGS"
+          fi
 
       - name: Build Admin APK
         run: |
