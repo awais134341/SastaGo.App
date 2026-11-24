@@ -10,7 +10,27 @@ permissions:
   contents: read
 
 jobs:
+      - name: Configure Maven Central Mirror
+        run: |
+          mkdir -p ~/.gradle/init.d
 
+          cat > ~/.gradle/init.d/maven-mirror.gradle <<'EOF'
+          allprojects {
+              repositories {
+                  maven {
+                      url "https://maven-central.storage-download.googleapis.com/maven2/"
+                  }
+              }
+
+              buildscript {
+                  repositories {
+                      maven {
+                          url "https://maven-central.storage-download.googleapis.com/maven2/"
+                      }
+                  }
+              }
+          }
+          EOF
   # =====================================
   # CUSTOMER APP BUILD
   # =====================================
@@ -174,7 +194,27 @@ jobs:
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
+      - name: Configure Maven Central Mirror
+        run: |
+          mkdir -p ~/.gradle/init.d
 
+          cat > ~/.gradle/init.d/maven-mirror.gradle <<'EOF'
+          allprojects {
+              repositories {
+                  maven {
+                      url "https://maven-central.storage-download.googleapis.com/maven2/"
+                  }
+              }
+
+              buildscript {
+                  repositories {
+                      maven {
+                          url "https://maven-central.storage-download.googleapis.com/maven2/"
+                      }
+                  }
+              }
+          }
+          EOF
   # =====================================
   # ADMIN APP BUILD
   # =====================================
