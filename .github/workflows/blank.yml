@@ -1,4 +1,4 @@
-name: Build SastaGo Customer and Admin APKs
+name: SastaGo APK Builder
 
 on:
   workflow_dispatch:
@@ -8,132 +8,201 @@ permissions:
 
 jobs:
 
-  # ==========================================
+  # =========================
   # CUSTOMER APP
-  # ==========================================
+  # =========================
 
   build-customer:
     name: Build Customer APK
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: '22'
 
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 21
+          java-version: '21'
 
-      - name: Extract Customer App
+      - name: Setup Android SDK
         run: |
-          mkdir -p customer-project
-          unzip Customer-App.zip -d customer-project
+          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager | head -n 1)
+          yes | "$SDKMANAGER" --licenses || true
+          "$SDKMANAGER" --install "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
-          cd customer-project/Customer-App
-
-          # Fix ZIP file permissions
-          chmod -R u+rwX .
-
-          # Keep Intro screen as app opening page
-          cp ./Intro.html ./index.html
-
-      - name: Install Customer Dependencies
+      - name: Extract Customer ZIP
+        shell: bash
         run: |
-          cd customer-project/Customer-App
+          set -e
 
+          test -f Customer-App.zip
+
+          mkdir -p customer-src www
+
+          unzip -q Customer-App.zip -d customer-src
+
+          chmod -R u+rwX,go+rX customer-src
+
+          ENTRY=$(find customer-src -type f \( -iname "Intro.html" -o -iname "customer.html" \) | sort | head -n 1)
+
+          if [ -z "$ENTRY" ]; then
+            echo "Customer HTML not found"
+            find customer-src -type f
+            exit 1
+          fi
+
+          SOURCE_DIR=$(dirname "$ENTRY")
+
+          cp -r "$SOURCE_DIR"/. www/
+
+          chmod -R u+rwX,go+rX www/
+
+          if [ -f www/Intro.html ]; then
+            cp www/Intro.html www/index.html
+          elif [ -f www/intro.html ]; then
+            cp www/intro.html www/index.html
+          elif [ -f www/customer.html ]; then
+            cp www/customer.html www/index.html
+          else
+            echo "Customer entry page missing"
+            exit 1
+          fi
+
+          test -f www/index.html
+          test -f www/customer.js
+          test -f www/customer-location.js
+          test -f www/customer-bill-tools.js
+
+          echo "Customer files extracted successfully"
+
+      - name: Install Capacitor 8 and Native Plugins
+        run: |
           npm init -y
 
-          npm install vite@6
-          npm install @capacitor/core@8
-          npm install @capacitor/cli@8
-          npm install @capacitor/android@8
-          npm install @capacitor/geolocation@8
-          npm install @capgo/capacitor-file-sharer@8.1.16
-          npm install @capgo/capacitor-printer@8.1.11
+          npm install @capacitor/core@8 @capacitor/cli@8 @capacitor/android@8 @capacitor/geolocation@8 @capgo/capacitor-file-sharer@8 @capgo/capacitor-printer@8
 
-      - name: Configure Customer Vite
-        run: |
-          cd customer-project/Customer-App
-
-          cat > vite.config.js <<'EOF'
-          import { defineConfig } from 'vite';
-
-          export default defineConfig({
-            base: './',
-            build: {
-              outDir: 'dist',
-              emptyOutDir: true,
-              rollupOptions: {
-                input: {
-                  index: 'index.html',
-                  customer: 'customer.html',
-                  product: 'product.html'
-                },
-                external: (id) =>
-                  id.startsWith('https://www.gstatic.com/')
-              }
-            }
-          });
-          EOF
-
-      - name: Build Customer Web App
-        run: |
-          cd customer-project/Customer-App
-          npx vite build
-
-      - name: Configure Customer Capacitor
-        run: |
-          cd customer-project/Customer-App
-
-          cat > capacitor.config.json <<'EOF'
-          {
-            "appId": "pk.sastago.customer",
-            "appName": "SastaGo",
-            "webDir": "dist"
-          }
-          EOF
+          printf '%s\n' '{"appId":"pk.sastago.customer","appName":"SastaGo","webDir":"www"}' > capacitor.config.json
 
           npx cap add android
           npx cap sync android
 
-      - name: Add Customer Location Permissions
+      - name: Generate Customer App Icon and Name
         run: |
-          cd customer-project/Customer-App
+          set -e
+
+          python3 -m pip install Pillow
 
           python3 - <<'PY'
+          from PIL import Image, ImageOps
           from pathlib import Path
+          import shutil
 
-          manifest = Path("android/app/src/main/AndroidManifest.xml")
-          content = manifest.read_text()
+          root = Path("www")
 
-          permissions = [
-              '    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />',
-              '    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />'
-          ]
+          # Find Customer icon, ignoring folder case and filename spaces.
+          candidates = []
 
-          for permission in permissions:
-              permission_name = permission.split('"')[1]
+          for p in root.rglob("*"):
+              if not p.is_file():
+                  continue
 
-              if permission_name not in content:
-                  content = content.replace(
-                      '<application',
-                      permission + '\n    <application',
-                      1
-                  )
+              name = p.name.lower().replace(" ", "")
+              path = str(p).lower()
 
-          manifest.write_text(content)
+              if "customer-icon" not in name and "customer-icon" not in path:
+                  continue
+
+              try:
+                  with Image.open(p) as test:
+                      test.verify()
+                  candidates.append(p)
+              except Exception:
+                  continue
+
+          if not candidates:
+              raise SystemExit(
+                  "Customer icon not found. Add a valid Customer PNG icon to the ZIP."
+              )
+
+          source = sorted(candidates, key=lambda p: ("(2)" in str(p), len(str(p))))[0]
+
+          print("Customer icon selected:", source)
+
+          with Image.open(source) as original:
+              img = original.convert("RGBA")
+              img = ImageOps.fit(
+                  img,
+                  (1024, 1024),
+                  method=Image.Resampling.LANCZOS
+              )
+
+          icon_folder = root / "app-icons"
+          icon_folder.mkdir(parents=True, exist_ok=True)
+
+          normalized = icon_folder / "icon.png"
+          img.save(normalized, "PNG")
+
+          res = Path("android/app/src/main/res")
+
+          sizes = {
+              "mipmap-mdpi": 48,
+              "mipmap-hdpi": 72,
+              "mipmap-xhdpi": 96,
+              "mipmap-xxhdpi": 144,
+              "mipmap-xxxhdpi": 192,
+          }
+
+          for folder, size in sizes.items():
+              target = res / folder
+              target.mkdir(parents=True, exist_ok=True)
+
+              resized = img.resize(
+                  (size, size),
+                  Image.Resampling.LANCZOS
+              )
+
+              resized.save(target / "ic_launcher.png")
+              resized.save(target / "ic_launcher_round.png")
+
+          adaptive = res / "mipmap-anydpi-v26"
+
+          if adaptive.exists():
+              shutil.rmtree(adaptive)
+
+          print("Customer launcher icons generated.")
+
           PY
+
+          STRINGS=android/app/src/main/res/values/strings.xml
+
+          mkdir -p android/app/src/main/res/values
+
+          if [ ! -f "$STRINGS" ]; then
+            printf '%s\n' '<resources></resources>' > "$STRINGS"
+          fi
+
+          if grep -q 'name="app_name"' "$STRINGS"; then
+            sed -i 's|<string name="app_name">.*</string>|<string name="app_name">SastaGo</string>|' "$STRINGS"
+          else
+            sed -i 's|</resources>|    <string name="app_name">SastaGo</string>\n</resources>|' "$STRINGS"
+          fi
+
+      - name: Ensure Android Location Permissions
+        run: |
+          MANIFEST=android/app/src/main/AndroidManifest.xml
+
+          sed -i '/<application/i\    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />\n    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />' "$MANIFEST"
 
       - name: Build Customer APK
         run: |
-          cd customer-project/Customer-App/android
+          cd android
           chmod +x gradlew
           ./gradlew assembleDebug
 
@@ -141,103 +210,188 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: SastaGo-Customer-APK
-          path: customer-project/Customer-App/android/app/build/outputs/apk/debug/app-debug.apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
 
 
-  # ==========================================
+  # =========================
   # ADMIN APP
-  # ==========================================
+  # =========================
 
   build-admin:
     name: Build Admin APK
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: '22'
 
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 21
+          java-version: '21'
 
-      - name: Extract Admin App
+      - name: Setup Android SDK
         run: |
-          mkdir -p admin-project
-          unzip Admin-App.zip -d admin-project
+          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager | head -n 1)
+          yes | "$SDKMANAGER" --licenses || true
+          "$SDKMANAGER" --install "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
-          cd admin-project/Admin-App
-
-          # Fix ZIP file permissions
-          chmod -R u+rwX .
-
-          cp ./admin.html ./index.html
-
-      - name: Install Admin Dependencies
+      - name: Extract Admin ZIP
+        shell: bash
         run: |
-          cd admin-project/Admin-App
+          set -e
 
+          test -f Admin-App.zip
+
+          mkdir -p admin-src www
+
+          unzip -q Admin-App.zip -d admin-src
+
+          chmod -R u+rwX,go+rX admin-src
+
+          ENTRY=$(find admin-src -type f -iname "admin.html" | head -n 1)
+
+          if [ -z "$ENTRY" ]; then
+            echo "Admin HTML file not found"
+            find admin-src -type f
+            exit 1
+          fi
+
+          SOURCE_DIR=$(dirname "$ENTRY")
+
+          cp -r "$SOURCE_DIR"/. www/
+
+          chmod -R u+rwX,go+rX www/
+
+          cp "$ENTRY" www/index.html
+
+          test -f www/index.html
+          test -f www/admin.js
+          test -f www/admin-bill-tools.js
+
+          echo "Admin files extracted successfully"
+
+      - name: Install Capacitor 8
+        run: |
           npm init -y
 
-          npm install vite@6
-          npm install @capacitor/core@8
-          npm install @capacitor/cli@8
-          npm install @capacitor/android@8
-          npm install @capgo/capacitor-file-sharer@8.1.16
-          npm install @capgo/capacitor-printer@8.1.11
+          npm install @capacitor/core@8 @capacitor/cli@8 @capacitor/android@8
 
-      - name: Configure Admin Vite
-        run: |
-          cd admin-project/Admin-App
-
-          cat > vite.config.js <<'EOF'
-          import { defineConfig } from 'vite';
-
-          export default defineConfig({
-            base: './',
-            build: {
-              outDir: 'dist',
-              emptyOutDir: true,
-              rollupOptions: {
-                input: {
-                  index: 'index.html'
-                },
-                external: (id) =>
-                  id.startsWith('https://www.gstatic.com/')
-              }
-            }
-          });
-          EOF
-
-      - name: Build Admin Web App
-        run: |
-          cd admin-project/Admin-App
-          npx vite build
-
-      - name: Configure Admin Capacitor
-        run: |
-          cd admin-project/Admin-App
-
-          cat > capacitor.config.json <<'EOF'
-          {
-            "appId": "pk.sastago.admin",
-            "appName": "SastaGo Admin",
-            "webDir": "dist"
-          }
-          EOF
+          printf '%s\n' '{"appId":"pk.sastago.admin","appName":"SastaGo Admin","webDir":"www"}' > capacitor.config.json
 
           npx cap add android
           npx cap sync android
 
+      - name: Generate Admin App Icon and Name
+        run: |
+          set -e
+
+          python3 -m pip install Pillow
+
+          python3 - <<'PY'
+          from PIL import Image, ImageOps
+          from pathlib import Path
+          import shutil
+
+          root = Path("www")
+
+          candidates = []
+
+          for p in root.rglob("*"):
+              if not p.is_file():
+                  continue
+
+              name = p.name.lower().replace(" ", "")
+              path = str(p).lower()
+
+              if "admin-icon" not in name and "admin-icon" not in path:
+                  continue
+
+              try:
+                  with Image.open(p) as test:
+                      test.verify()
+                  candidates.append(p)
+              except Exception:
+                  continue
+
+          if not candidates:
+              raise SystemExit(
+                  "Admin icon not found. Add a valid Admin PNG icon to the ZIP."
+              )
+
+          source = sorted(candidates, key=lambda p: ("(2)" in str(p), len(str(p))))[0]
+
+          print("Admin icon selected:", source)
+
+          with Image.open(source) as original:
+              img = original.convert("RGBA")
+              img = ImageOps.fit(
+                  img,
+                  (1024, 1024),
+                  method=Image.Resampling.LANCZOS
+              )
+
+          icon_folder = root / "app-icons"
+          icon_folder.mkdir(parents=True, exist_ok=True)
+
+          normalized = icon_folder / "icon.png"
+          img.save(normalized, "PNG")
+
+          res = Path("android/app/src/main/res")
+
+          sizes = {
+              "mipmap-mdpi": 48,
+              "mipmap-hdpi": 72,
+              "mipmap-xhdpi": 96,
+              "mipmap-xxhdpi": 144,
+              "mipmap-xxxhdpi": 192,
+          }
+
+          for folder, size in sizes.items():
+              target = res / folder
+              target.mkdir(parents=True, exist_ok=True)
+
+              resized = img.resize(
+                  (size, size),
+                  Image.Resampling.LANCZOS
+              )
+
+              resized.save(target / "ic_launcher.png")
+              resized.save(target / "ic_launcher_round.png")
+
+          adaptive = res / "mipmap-anydpi-v26"
+
+          if adaptive.exists():
+              shutil.rmtree(adaptive)
+
+          print("Admin launcher icons generated.")
+
+          PY
+
+          STRINGS=android/app/src/main/res/values/strings.xml
+
+          mkdir -p android/app/src/main/res/values
+
+          if [ ! -f "$STRINGS" ]; then
+            printf '%s\n' '<resources></resources>' > "$STRINGS"
+          fi
+
+          if grep -q 'name="app_name"' "$STRINGS"; then
+            sed -i 's|<string name="app_name">.*</string>|<string name="app_name">SastaGo Admin</string>|' "$STRINGS"
+          else
+            sed -i 's|</resources>|    <string name="app_name">SastaGo Admin</string>\n</resources>|' "$STRINGS"
+          fi
+
       - name: Build Admin APK
         run: |
-          cd admin-project/Admin-App/android
+          cd android
           chmod +x gradlew
           ./gradlew assembleDebug
 
@@ -245,4 +399,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: SastaGo-Admin-APK
-          path: admin-project/Admin-App/android/app/build/outputs/apk/debug/app-debug.apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
