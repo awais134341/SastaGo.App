@@ -10,11 +10,17 @@ permissions:
   contents: read
 
 jobs:
+
+  # =====================================
+  # CUSTOMER APP BUILD
+  # =====================================
+
   build-customer:
-    name: Build Customer APK
+    name: Build SastaGo Customer APK
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout repository
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
       - name: Setup Node.js
@@ -34,69 +40,126 @@ jobs:
           yes | "$SDKMANAGER" --licenses || true
           "$SDKMANAGER" --install "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
-      - name: Extract Customer ZIP and normalize permissions
+      - name: Extract Customer ZIP
         run: |
-          test -f SastaGo-Customer-Bill-Fix.zip || { echo 'SastaGo-Customer-Bill-Fix.zip missing from repository root'; exit 1; }
+          test -f Customer-App.zip || {
+            echo "Customer-App.zip missing!"
+            exit 1
+          }
+
           rm -rf customer-src www
           mkdir -p customer-src www
+
           python3 - <<'PY'
-          import os, zipfile
+          import zipfile
           from pathlib import Path
-          archive = Path('SastaGo-Customer-Bill-Fix.zip')
-          root = Path('customer-src').resolve()
-          with zipfile.ZipFile(archive) as z:
+
+          root = Path("customer-src").resolve()
+
+          with zipfile.ZipFile("Customer-App.zip") as z:
               for info in z.infolist():
-                  name = info.filename.replace('\\\\', '/')
+                  name = info.filename.replace("\\", "/")
                   target = (root / name).resolve()
+
                   if target != root and root not in target.parents:
-                      raise SystemExit(f'Unsafe ZIP path: {name}')
+                      raise SystemExit("Unsafe ZIP path")
+
                   if info.is_dir():
                       target.mkdir(parents=True, exist_ok=True)
-                      os.chmod(target, 0o755)
                   else:
                       target.parent.mkdir(parents=True, exist_ok=True)
-                      with z.open(info) as src, open(target, 'wb') as dst:
+                      with z.open(info) as src, open(target, "wb") as dst:
                           dst.write(src.read())
-                      os.chmod(target, 0o644)
-          for current, dirs, files in os.walk(root):
-              os.chmod(current, 0o755)
-              for filename in files:
-                  os.chmod(Path(current) / filename, 0o644)
           PY
-          ENTRY=$(find customer-src -type f -iname 'Intro.html' -print -quit)
-          if [ -z "$ENTRY" ]; then ENTRY=$(find customer-src -type f -iname 'customer.html' -print -quit); fi
-          if [ -z "$ENTRY" ]; then echo 'Customer entry HTML not found'; find customer-src -type f -print; exit 1; fi
-          cp -r "$(dirname "$ENTRY")"/. www/
-          find www -type d -exec chmod 755 {} +
-          find www -type f -exec chmod 644 {} +
-          if [ -f www/Intro.html ]; then cp www/Intro.html www/index.html;
-          elif [ -f www/intro.html ]; then cp www/intro.html www/index.html;
-          elif [ -f www/customer.html ]; then cp www/customer.html www/index.html;
-          else echo 'Customer index page not found'; exit 1; fi
-          test -r www/index.html || { echo 'Customer index.html is not readable'; exit 1; }
-          test -f www/customer-location.js || { echo 'customer-location.js missing'; exit 1; }
-          test -f www/customer-bill-tools.js || { echo 'customer-bill-tools.js missing'; exit 1; }
-          echo 'Customer ZIP extracted and permissions normalized.'
 
-      - name: Install Capacitor 8 and Customer plugins
+          ENTRY=$(find customer-src -type f -iname "Intro.html" -print -quit)
+
+          if [ -z "$ENTRY" ]; then
+            ENTRY=$(find customer-src -type f -iname "customer.html" -print -quit)
+          fi
+
+          test -n "$ENTRY" || {
+            echo "Customer HTML not found"
+            exit 1
+          }
+
+          cp -r "$(dirname "$ENTRY")"/. www/
+
+          if [ -f www/Intro.html ]; then
+            cp www/Intro.html www/index.html
+          elif [ -f www/intro.html ]; then
+            cp www/intro.html www/index.html
+          elif [ -f www/customer.html ]; then
+            cp www/customer.html www/index.html
+          else
+            echo "Customer index page missing"
+            exit 1
+          fi
+
+          test -f www/customer-bill-tools.js
+          test -f www/customer-location.js
+          test -f www/customer-gps-capacitor.js
+
+      - name: Generate Customer App Icon PNG
         run: |
+          mkdir -p assets
+
+          ICON=$(find customer-src -type f -iname "sastago-icon.svg" -print -quit)
+
+          test -n "$ICON" || {
+            echo "SastaGo icon SVG missing"
+            exit 1
+          }
+
           npm init -y
+          npm install --no-save sharp
+
+          ICON_FILE="$ICON" node --input-type=module -e "
+          import sharp from 'sharp';
+          const p = process.env.ICON_FILE;
+          await sharp(p)
+            .resize(1024, 1024, {
+              fit: 'contain',
+              background: '#ffffff'
+            })
+            .png()
+            .toFile('assets/icon.png');
+          "
+
+      - name: Install Capacitor and Android Plugins
+        run: |
           npm install --save-exact \
             @capacitor/core@8 \
             @capacitor/cli@8 \
             @capacitor/android@8 \
             @capacitor/geolocation@8 \
             @capgo/capacitor-file-sharer@8.1.16 \
-            @capgo/capacitor-printer@8.1.11
-          printf '%s\n' '{"appId":"pk.sastago.customer","appName":"SastaGo Customer","webDir":"www"}' > capacitor.config.json
+            @capgo/capacitor-printer@8.1.11 \
+            @capacitor/assets
+
+          printf '%s\n' \
+          '{"appId":"pk.sastago.customer","appName":"SastaGo Customer","webDir":"www"}' \
+          > capacitor.config.json
+
+          npx capacitor-assets generate --android
+
           npx cap add android
           npx cap sync android
 
-      - name: Add Android GPS permissions
+      - name: Add Customer Location Permissions
         run: |
           MANIFEST=android/app/src/main/AndroidManifest.xml
-          grep -q 'android.permission.ACCESS_COARSE_LOCATION' "$MANIFEST" || sed -i '/<application/i\    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />' "$MANIFEST"
-          grep -q 'android.permission.ACCESS_FINE_LOCATION' "$MANIFEST" || sed -i '/<application/i\    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />' "$MANIFEST"
+
+          grep -q 'android.permission.ACCESS_COARSE_LOCATION' "$MANIFEST" || \
+          sed -i '/<application/i\    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />' "$MANIFEST"
+
+          grep -q 'android.permission.ACCESS_FINE_LOCATION' "$MANIFEST" || \
+          sed -i '/<application/i\    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />' "$MANIFEST"
+
+          grep -q 'android.permission.INTERNET' "$MANIFEST" || \
+          sed -i '/<application/i\    <uses-permission android:name="android.permission.INTERNET" />' "$MANIFEST"
+
+          sed -i 's#<application#<application android:label="SastaGo Customer"#' "$MANIFEST"
 
       - name: Build Customer APK
         run: |
@@ -111,11 +174,17 @@ jobs:
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
+
+  # =====================================
+  # ADMIN APP BUILD
+  # =====================================
+
   build-admin:
-    name: Build Admin APK
+    name: Build SastaGo Admin APK
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout repository
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
       - name: Setup Node.js
@@ -135,58 +204,122 @@ jobs:
           yes | "$SDKMANAGER" --licenses || true
           "$SDKMANAGER" --install "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
-      - name: Extract Admin ZIP and normalize permissions
+      - name: Extract Admin ZIP
         run: |
-          test -f SastaGo-Admin-Bill-Fix.zip || { echo 'SastaGo-Admin-Bill-Fix.zip missing from repository root'; exit 1; }
+          test -f Admin-App.zip || {
+            echo "Admin-App.zip missing!"
+            exit 1
+          }
+
           rm -rf admin-src www
           mkdir -p admin-src www
+
           python3 - <<'PY'
-          import os, zipfile
+          import zipfile
           from pathlib import Path
-          archive = Path('SastaGo-Admin-Bill-Fix.zip')
-          root = Path('admin-src').resolve()
-          with zipfile.ZipFile(archive) as z:
+
+          root = Path("admin-src").resolve()
+
+          with zipfile.ZipFile("Admin-App.zip") as z:
               for info in z.infolist():
-                  name = info.filename.replace('\\\\', '/')
+                  name = info.filename.replace("\\", "/")
                   target = (root / name).resolve()
+
                   if target != root and root not in target.parents:
-                      raise SystemExit(f'Unsafe ZIP path: {name}')
+                      raise SystemExit("Unsafe ZIP path")
+
                   if info.is_dir():
                       target.mkdir(parents=True, exist_ok=True)
-                      os.chmod(target, 0o755)
                   else:
                       target.parent.mkdir(parents=True, exist_ok=True)
-                      with z.open(info) as src, open(target, 'wb') as dst:
+                      with z.open(info) as src, open(target, "wb") as dst:
                           dst.write(src.read())
-                      os.chmod(target, 0o644)
-          for current, dirs, files in os.walk(root):
-              os.chmod(current, 0o755)
-              for filename in files:
-                  os.chmod(Path(current) / filename, 0o644)
           PY
-          ENTRY=$(find admin-src -type f -iname 'admin.html' -print -quit)
-          if [ -z "$ENTRY" ]; then echo 'admin.html not found'; find admin-src -type f -print; exit 1; fi
-          cp -r "$(dirname "$ENTRY")"/. www/
-          find www -type d -exec chmod 755 {} +
-          find www -type f -exec chmod 644 {} +
-          cp "$ENTRY" www/index.html
-          test -r www/index.html || { echo 'Admin index.html is not readable'; exit 1; }
-          test -f www/admin.js || { echo 'admin.js missing'; exit 1; }
-          test -f www/admin-bill-tools.js || { echo 'admin-bill-tools.js missing'; exit 1; }
-          echo 'Admin ZIP extracted and permissions normalized.'
 
-      - name: Install Capacitor 8 and Admin bill plugins
+          ENTRY=$(find admin-src -type f -iname "admin.html" -print -quit)
+
+          test -n "$ENTRY" || {
+            echo "admin.html missing"
+            exit 1
+          }
+
+          cp -r "$(dirname "$ENTRY")"/. www/
+          cp "$ENTRY" www/index.html
+
+          test -f www/admin.js
+          test -f www/admin-bill-tools.js
+
+      - name: Generate Admin App Icon PNG
         run: |
+          mkdir -p assets
+
+          python3 - <<'PY'
+          import zipfile
+          from pathlib import Path
+
+          with zipfile.ZipFile("Customer-App.zip") as z:
+              matches = [
+                  n for n in z.namelist()
+                  if n.lower().endswith("sastago-icon.svg")
+              ]
+
+              if not matches:
+                  raise SystemExit("SastaGo icon missing")
+
+              Path("icon-source.svg").write_bytes(
+                  z.read(matches[0])
+              )
+          PY
+
           npm init -y
+          npm install --no-save sharp
+
+          node --input-type=module -e "
+          import sharp from 'sharp';
+
+          await sharp('icon-source.svg')
+            .resize(1024, 1024, {
+              fit: 'contain',
+              background: '#ffffff'
+            })
+            .png()
+            .toFile('assets/icon.png');
+          "
+
+      - name: Install Capacitor and Android Plugins
+        run: |
           npm install --save-exact \
             @capacitor/core@8 \
             @capacitor/cli@8 \
             @capacitor/android@8 \
+            @capacitor/geolocation@8 \
             @capgo/capacitor-file-sharer@8.1.16 \
-            @capgo/capacitor-printer@8.1.11
-          printf '%s\n' '{"appId":"pk.sastago.admin","appName":"SastaGo Admin","webDir":"www"}' > capacitor.config.json
+            @capgo/capacitor-printer@8.1.11 \
+            @capacitor/assets
+
+          printf '%s\n' \
+          '{"appId":"pk.sastago.admin","appName":"SastaGo Admin","webDir":"www"}' \
+          > capacitor.config.json
+
+          npx capacitor-assets generate --android
+
           npx cap add android
           npx cap sync android
+
+      - name: Add Admin Location Permissions
+        run: |
+          MANIFEST=android/app/src/main/AndroidManifest.xml
+
+          grep -q 'android.permission.ACCESS_COARSE_LOCATION' "$MANIFEST" || \
+          sed -i '/<application/i\    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />' "$MANIFEST"
+
+          grep -q 'android.permission.ACCESS_FINE_LOCATION' "$MANIFEST" || \
+          sed -i '/<application/i\    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />' "$MANIFEST"
+
+          grep -q 'android.permission.INTERNET' "$MANIFEST" || \
+          sed -i '/<application/i\    <uses-permission android:name="android.permission.INTERNET" />' "$MANIFEST"
+
+          sed -i 's#<application#<application android:label="SastaGo Admin"#' "$MANIFEST"
 
       - name: Build Admin APK
         run: |
