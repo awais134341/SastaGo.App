@@ -131,8 +131,7 @@ jobs:
                   "Customer icon not found. Add a valid Customer PNG icon to the ZIP."
               )
 
-          source = sorted(candidates, key=lambda p: ("(2)" in p, len(str(p))))[0]
-
+source = sorted(candidates, key=lambda p:("(2)" in str(p), len(str(p))))[0]
           print("Customer icon selected:", source)
 
           with Image.open(source) as original:
@@ -326,8 +325,7 @@ jobs:
                   "Admin icon not found. Add a valid Admin PNG icon to the ZIP."
               )
 
-          source = sorted(candidates, key=lambda p: ("(2)" in p, len(str(p))))[0]
-
+          source = sorted(candidates, key=lambda p: ("(2)" in str(p), len(str(p))))[0]
           print("Admin icon selected:", source)
 
           with Image.open(source) as original:
