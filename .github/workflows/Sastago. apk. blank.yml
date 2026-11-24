@@ -80,8 +80,9 @@ jobs:
           test -f www/customer-location.js
           test -f www/customer-bill-tools.js
 
-          test -f www/app-icons/customer-icon.png || {
-            echo "Customer icon missing: app-icons/customer-icon.png"
+          test -f www/app-icons/icon.png || {
+            echo "Customer icon missing: app-icons/icon.png"
+            find www -maxdepth 4 -type f
             exit 1
           }
 
@@ -104,13 +105,12 @@ jobs:
 
           python3 -m pip install Pillow
 
-          mkdir -p android/app/src/main/res
-
           python3 - <<'PY'
           from PIL import Image
           from pathlib import Path
+          import shutil
 
-          source = Path("www/app-icons/customer-icon.png")
+          source = Path("www/app-icons/icon.png")
 
           if not source.exists():
               raise SystemExit("Customer icon not found")
@@ -138,13 +138,11 @@ jobs:
               icon.save(target / "ic_launcher.png")
               icon.save(target / "ic_launcher_round.png")
 
-          # Remove adaptive icon XML so the supplied full PNG is used.
           adaptive = res / "mipmap-anydpi-v26"
           if adaptive.exists():
-              import shutil
               shutil.rmtree(adaptive)
 
-          print("Customer launcher icons generated.")
+          print("Customer icons generated.")
           PY
 
           STRINGS=android/app/src/main/res/values/strings.xml
@@ -242,8 +240,9 @@ jobs:
           test -f www/admin.js
           test -f www/admin-bill-tools.js
 
-          test -f www/app-icons/admin-icon.png || {
-            echo "Admin icon missing: app-icons/admin-icon.png"
+          test -f www/app-icons/icon.png || {
+            echo "Admin icon missing: app-icons/icon.png"
+            find www -maxdepth 4 -type f
             exit 1
           }
 
@@ -266,13 +265,12 @@ jobs:
 
           python3 -m pip install Pillow
 
-          mkdir -p android/app/src/main/res
-
           python3 - <<'PY'
           from PIL import Image
           from pathlib import Path
+          import shutil
 
-          source = Path("www/app-icons/admin-icon.png")
+          source = Path("www/app-icons/icon.png")
 
           if not source.exists():
               raise SystemExit("Admin icon not found")
@@ -302,10 +300,9 @@ jobs:
 
           adaptive = res / "mipmap-anydpi-v26"
           if adaptive.exists():
-              import shutil
               shutil.rmtree(adaptive)
 
-          print("Admin launcher icons generated.")
+          print("Admin icons generated.")
           PY
 
           STRINGS=android/app/src/main/res/values/strings.xml
