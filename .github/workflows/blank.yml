@@ -8,21 +8,22 @@ permissions:
 
 jobs:
 
+  # ==========================================
+  # CUSTOMER APP
+  # ==========================================
+
   build-customer:
     name: Build Customer APK
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-          cache-dependency-path: package-lock.json
-        continue-on-error: true
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -32,16 +33,27 @@ jobs:
 
       - name: Extract Customer App
         run: |
-          mkdir customer-project
+          mkdir -p customer-project
           unzip Customer-App.zip -d customer-project
+
           cd customer-project/Customer-App
 
-          cp Intro.html index.html
+          # Fix ZIP file permissions
+          chmod -R u+rwX .
+
+          # Keep Intro screen as app opening page
+          cp ./Intro.html ./index.html
+
+      - name: Install Customer Dependencies
+        run: |
+          cd customer-project/Customer-App
 
           npm init -y
 
-          npm install vite@latest
-          npm install @capacitor/core@8 @capacitor/cli@8 @capacitor/android@8
+          npm install vite@6
+          npm install @capacitor/core@8
+          npm install @capacitor/cli@8
+          npm install @capacitor/android@8
           npm install @capacitor/geolocation@8
           npm install @capgo/capacitor-file-sharer@8.1.16
           npm install @capgo/capacitor-printer@8.1.11
@@ -59,7 +71,13 @@ jobs:
               outDir: 'dist',
               emptyOutDir: true,
               rollupOptions: {
-                external: (id) => id.startsWith('https://www.gstatic.com/')
+                input: {
+                  index: 'index.html',
+                  customer: 'customer.html',
+                  product: 'product.html'
+                },
+                external: (id) =>
+                  id.startsWith('https://www.gstatic.com/')
               }
             }
           });
@@ -78,8 +96,7 @@ jobs:
           {
             "appId": "pk.sastago.customer",
             "appName": "SastaGo",
-            "webDir": "dist",
-            "bundledWebRuntime": false
+            "webDir": "dist"
           }
           EOF
 
@@ -93,8 +110,8 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
 
-          p = Path("android/app/src/main/AndroidManifest.xml")
-          s = p.read_text()
+          manifest = Path("android/app/src/main/AndroidManifest.xml")
+          content = manifest.read_text()
 
           permissions = [
               '    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />',
@@ -102,11 +119,16 @@ jobs:
           ]
 
           for permission in permissions:
-              name = permission.split('"')[1]
-              if name not in s:
-                  s = s.replace('<application', permission + '\n    <application', 1)
+              permission_name = permission.split('"')[1]
 
-          p.write_text(s)
+              if permission_name not in content:
+                  content = content.replace(
+                      '<application',
+                      permission + '\n    <application',
+                      1
+                  )
+
+          manifest.write_text(content)
           PY
 
       - name: Build Customer APK
@@ -122,13 +144,22 @@ jobs:
           path: customer-project/Customer-App/android/app/build/outputs/apk/debug/app-debug.apk
 
 
+  # ==========================================
+  # ADMIN APP
+  # ==========================================
+
   build-admin:
     name: Build Admin APK
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout Repository
         uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -136,23 +167,28 @@ jobs:
           distribution: temurin
           java-version: 21
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
       - name: Extract Admin App
         run: |
-          mkdir admin-project
+          mkdir -p admin-project
           unzip Admin-App.zip -d admin-project
+
           cd admin-project/Admin-App
 
-          cp admin.html index.html
+          # Fix ZIP file permissions
+          chmod -R u+rwX .
+
+          cp ./admin.html ./index.html
+
+      - name: Install Admin Dependencies
+        run: |
+          cd admin-project/Admin-App
 
           npm init -y
 
-          npm install vite@latest
-          npm install @capacitor/core@8 @capacitor/cli@8 @capacitor/android@8
+          npm install vite@6
+          npm install @capacitor/core@8
+          npm install @capacitor/cli@8
+          npm install @capacitor/android@8
           npm install @capgo/capacitor-file-sharer@8.1.16
           npm install @capgo/capacitor-printer@8.1.11
 
@@ -169,7 +205,11 @@ jobs:
               outDir: 'dist',
               emptyOutDir: true,
               rollupOptions: {
-                external: (id) => id.startsWith('https://www.gstatic.com/')
+                input: {
+                  index: 'index.html'
+                },
+                external: (id) =>
+                  id.startsWith('https://www.gstatic.com/')
               }
             }
           });
@@ -188,8 +228,7 @@ jobs:
           {
             "appId": "pk.sastago.admin",
             "appName": "SastaGo Admin",
-            "webDir": "dist",
-            "bundledWebRuntime": false
+            "webDir": "dist"
           }
           EOF
 
