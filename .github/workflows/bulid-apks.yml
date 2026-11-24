@@ -36,10 +36,12 @@ jobs:
           test -f Customer-App.zip || { echo 'Customer-App.zip missing from repository root'; exit 1; }
           mkdir -p customer-src www
           unzip -q Customer-App.zip -d customer-src
+          chmod -R u+rwX customer-src
           ENTRY=$(find customer-src -type f -iname 'Intro.html' | head -n 1)
           if [ -z "$ENTRY" ]; then ENTRY=$(find customer-src -type f -iname 'customer.html' | head -n 1); fi
           if [ -z "$ENTRY" ]; then echo 'Customer entry HTML not found'; find customer-src -type f; exit 1; fi
-          cp -a "$(dirname "$ENTRY")"/. www/
+          cp -r "$(dirname "$ENTRY")"/. www/
+          chmod -R u+rwX www/
           if [ -f www/Intro.html ]; then cp www/Intro.html www/index.html; \
           elif [ -f www/intro.html ]; then cp www/intro.html www/index.html; \
           elif [ -f www/customer.html ]; then cp www/customer.html www/index.html; \
@@ -103,9 +105,11 @@ jobs:
           test -f Admin-App.zip || { echo 'Admin-App.zip missing from repository root'; exit 1; }
           mkdir -p admin-src www
           unzip -q Admin-App.zip -d admin-src
+          chmod -R u+rwX admin-src
           ENTRY=$(find admin-src -type f -iname 'admin.html' | head -n 1)
           if [ -z "$ENTRY" ]; then echo 'Admin HTML file not found'; find admin-src -type f; exit 1; fi
-          cp -a "$(dirname "$ENTRY")"/. www/
+          cp -r "$(dirname "$ENTRY")"/. www/
+          chmod -R u+rwX www/
           cp "$ENTRY" www/index.html
           test -f www/admin.js
           test -f www/admin-bill-tools.js
