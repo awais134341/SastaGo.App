@@ -7,6 +7,11 @@ permissions:
   contents: read
 
 jobs:
+
+  # =========================
+  # CUSTOMER APP
+  # =========================
+
   build-customer:
     name: Build Customer APK
     runs-on: ubuntu-latest
@@ -33,80 +38,54 @@ jobs:
           "$SDKMANAGER" --install "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
       - name: Extract Customer ZIP
+        shell: bash
         run: |
-          python3 - <<'PY'
-          import os
-          import zipfile
-          import shutil
+          set -e
 
-          zip_path = "Customer-App.zip"
-          if not os.path.isfile(zip_path):
-              raise SystemExit("Customer-App.zip missing from repository root")
+          test -f Customer-App.zip
 
-          os.makedirs("customer-src", exist_ok=True)
-          os.makedirs("www", exist_ok=True)
+          mkdir -p customer-src www
 
-          with zipfile.ZipFile(zip_path) as z:
-              z.extractall("customer-src")
+          unzip -q Customer-App.zip -d customer-src
 
-          for root, dirs, files in os.walk("customer-src"):
-              for d in dirs:
-                  os.chmod(os.path.join(root, d), 0o755)
-              for f in files:
-                  os.chmod(os.path.join(root, f), 0o644)
+          chmod -R u+rwX,go+rX customer-src
 
-          entry = None
-          for root, dirs, files in os.walk("customer-src"):
-              for f in files:
-                  if f.lower() in ("intro.html", "customer.html"):
-                      entry = os.path.join(root, f)
-                      if f.lower() == "intro.html":
-                          break
-              if entry:
-                  break
+          ENTRY=$(find customer-src -type f \( -iname "Intro.html" -o -iname "customer.html" \) | sort | head -n 1)
 
-          if not entry:
-              raise SystemExit("Customer entry HTML not found")
+          if [ -z "$ENTRY" ]; then
+            echo "Customer HTML not found"
+            find customer-src -type f
+            exit 1
+          fi
 
-          source_dir = os.path.dirname(entry)
+          SOURCE_DIR=$(dirname "$ENTRY")
 
-          for item in os.listdir(source_dir):
-              src = os.path.join(source_dir, item)
-              dst = os.path.join("www", item)
+          cp -r "$SOURCE_DIR"/. www/
 
-              if os.path.isdir(src):
-                  shutil.copytree(src, dst, dirs_exist_ok=True)
-              else:
-                  shutil.copy2(src, dst)
+          chmod -R u+rwX,go+rX www/
 
-          intro = os.path.join("www", "Intro.html")
-          if not os.path.isfile(intro):
-              intro = os.path.join("www", "intro.html")
-
-          if os.path.isfile(intro):
-              shutil.copy2(intro, "www/index.html")
-          elif os.path.isfile(os.path.join("www", "customer.html")):
-              shutil.copy2("www/customer.html", "www/index.html")
-          else:
-              raise SystemExit("Customer entry page could not be prepared")
-
-          for root, dirs, files in os.walk("www"):
-              for d in dirs:
-                  os.chmod(os.path.join(root, d), 0o755)
-              for f in files:
-                  os.chmod(os.path.join(root, f), 0o644)
-
-          print("Customer files extracted successfully")
-          PY
+          if [ -f www/Intro.html ]; then
+            cp www/Intro.html www/index.html
+          elif [ -f www/intro.html ]; then
+            cp www/intro.html www/index.html
+          elif [ -f www/customer.html ]; then
+            cp www/customer.html www/index.html
+          else
+            echo "Customer entry page missing"
+            exit 1
+          fi
 
           test -f www/index.html
           test -f www/customer.js
           test -f www/customer-location.js
           test -f www/customer-bill-tools.js
 
+          echo "Customer files extracted successfully"
+
       - name: Install Capacitor 8 and Native Plugins
         run: |
           npm init -y
+
           npm install @capacitor/core@8 @capacitor/cli@8 @capacitor/android@8 @capacitor/geolocation@8 @capgo/capacitor-file-sharer@8 @capgo/capacitor-printer@8
 
           printf '%s\n' '{"appId":"pk.sastago.customer","appName":"SastaGo Customer","webDir":"www"}' > capacitor.config.json
@@ -132,6 +111,11 @@ jobs:
           name: SastaGo-Customer-APK
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+
+
+  # =========================
+  # ADMIN APP
+  # =========================
 
   build-admin:
     name: Build Admin APK
@@ -159,34 +143,63 @@ jobs:
           "$SDKMANAGER" --install "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
       - name: Extract Admin ZIP
+        shell: bash
         run: |
-          python3 - <<'PY'
-          import os
-          import zipfile
-          import shutil
+          set -e
 
-          zip_path = "Admin-App.zip"
-          if not os.path.isfile(zip_path):
-              raise SystemExit("Admin-App.zip missing from repository root")
+          test -f Admin-App.zip
 
-          os.makedirs("admin-src", exist_ok=True)
-          os.makedirs("www", exist_ok=True)
+          mkdir -p admin-src www
 
-          with zipfile.ZipFile(zip_path) as z:
-              z.extractall("admin-src")
+          unzip -q Admin-App.zip -d admin-src
 
-          for root, dirs, files in os.walk("admin-src"):
-              for d in dirs:
-                  os.chmod(os.path.join(root, d), 0o755)
-              for f in files:
-                  os.chmod(os.path.join(root, f), 0o644)
+          chmod -R u+rwX,go+rX admin-src
 
-          entry = None
-          for root, dirs, files in os.walk("admin-src"):
-              for f in files:
-                  if f.lower() == "admin.html":
-                      entry = os.path.join(root, f)
-                      break
+          ENTRY=$(find admin-src -type f -iname "admin.html" | head -n 1)
+
+          if [ -z "$ENTRY" ]; then
+            echo "Admin HTML file not found"
+            find admin-src -type f
+            exit 1
+          fi
+
+          SOURCE_DIR=$(dirname "$ENTRY")
+
+          cp -r "$SOURCE_DIR"/. www/
+
+          chmod -R u+rwX,go+rX www/
+
+          cp "$ENTRY" www/index.html
+
+          test -f www/index.html
+          test -f www/admin.js
+          test -f www/admin-bill-tools.js
+
+          echo "Admin files extracted successfully"
+
+      - name: Install Capacitor 8
+        run: |
+          npm init -y
+
+          npm install @capacitor/core@8 @capacitor/cli@8 @capacitor/android@8
+
+          printf '%s\n' '{"appId":"pk.sastago.admin","appName":"SastaGo Admin","webDir":"www"}' > capacitor.config.json
+
+          npx cap add android
+          npx cap sync android
+
+      - name: Build Admin APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Upload Admin APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: SastaGo-Admin-APK
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: errork
               if entry:
                   break
 
