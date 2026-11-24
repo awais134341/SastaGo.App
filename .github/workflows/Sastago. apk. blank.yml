@@ -80,12 +80,6 @@ jobs:
           test -f www/customer-location.js
           test -f www/customer-bill-tools.js
 
-          test -f www/app-icons/icon.png || {
-            echo "Customer icon missing: app-icons/icon.png"
-            find www -maxdepth 4 -type f
-            exit 1
-          }
-
           echo "Customer files extracted successfully"
 
       - name: Install Capacitor 8 and Native Plugins
@@ -99,26 +93,61 @@ jobs:
           npx cap add android
           npx cap sync android
 
-      - name: Set Customer App Name and Icon
+      - name: Generate Customer App Icon and Name
         run: |
           set -e
 
           python3 -m pip install Pillow
 
           python3 - <<'PY'
-          from PIL import Image
+          from PIL import Image, ImageOps
           from pathlib import Path
           import shutil
 
-          source = Path("www/app-icons/icon.png")
+          root = Path("www")
 
-          if not source.exists():
-              raise SystemExit("Customer icon not found")
+          # Find Customer icon, ignoring folder case and filename spaces.
+          candidates = []
 
-          img = Image.open(source).convert("RGBA")
+          for p in root.rglob("*"):
+              if not p.is_file():
+                  continue
 
-          if img.size != (1024, 1024):
-              raise SystemExit(f"Icon must be 1024x1024, found {img.size}")
+              name = p.name.lower().replace(" ", "")
+              path = str(p).lower()
+
+              if "customer-icon" not in name and "customer-icon" not in path:
+                  continue
+
+              try:
+                  with Image.open(p) as test:
+                      test.verify()
+                  candidates.append(p)
+              except Exception:
+                  continue
+
+          if not candidates:
+              raise SystemExit(
+                  "Customer icon not found. Add a valid Customer PNG icon to the ZIP."
+              )
+
+          source = sorted(candidates, key=lambda p: ("(2)" in p, len(str(p))))[0]
+
+          print("Customer icon selected:", source)
+
+          with Image.open(source) as original:
+              img = original.convert("RGBA")
+              img = ImageOps.fit(
+                  img,
+                  (1024, 1024),
+                  method=Image.Resampling.LANCZOS
+              )
+
+          icon_folder = root / "app-icons"
+          icon_folder.mkdir(parents=True, exist_ok=True)
+
+          normalized = icon_folder / "icon.png"
+          img.save(normalized, "PNG")
 
           res = Path("android/app/src/main/res")
 
@@ -134,18 +163,25 @@ jobs:
               target = res / folder
               target.mkdir(parents=True, exist_ok=True)
 
-              icon = img.resize((size, size), Image.Resampling.LANCZOS)
-              icon.save(target / "ic_launcher.png")
-              icon.save(target / "ic_launcher_round.png")
+              resized = img.resize(
+                  (size, size),
+                  Image.Resampling.LANCZOS
+              )
+
+              resized.save(target / "ic_launcher.png")
+              resized.save(target / "ic_launcher_round.png")
 
           adaptive = res / "mipmap-anydpi-v26"
+
           if adaptive.exists():
               shutil.rmtree(adaptive)
 
-          print("Customer icons generated.")
+          print("Customer launcher icons generated.")
+
           PY
 
           STRINGS=android/app/src/main/res/values/strings.xml
+
           mkdir -p android/app/src/main/res/values
 
           if [ ! -f "$STRINGS" ]; then
@@ -240,12 +276,6 @@ jobs:
           test -f www/admin.js
           test -f www/admin-bill-tools.js
 
-          test -f www/app-icons/icon.png || {
-            echo "Admin icon missing: app-icons/icon.png"
-            find www -maxdepth 4 -type f
-            exit 1
-          }
-
           echo "Admin files extracted successfully"
 
       - name: Install Capacitor 8
@@ -259,26 +289,60 @@ jobs:
           npx cap add android
           npx cap sync android
 
-      - name: Set Admin App Name and Icon
+      - name: Generate Admin App Icon and Name
         run: |
           set -e
 
           python3 -m pip install Pillow
 
           python3 - <<'PY'
-          from PIL import Image
+          from PIL import Image, ImageOps
           from pathlib import Path
           import shutil
 
-          source = Path("www/app-icons/icon.png")
+          root = Path("www")
 
-          if not source.exists():
-              raise SystemExit("Admin icon not found")
+          candidates = []
 
-          img = Image.open(source).convert("RGBA")
+          for p in root.rglob("*"):
+              if not p.is_file():
+                  continue
 
-          if img.size != (1024, 1024):
-              raise SystemExit(f"Icon must be 1024x1024, found {img.size}")
+              name = p.name.lower().replace(" ", "")
+              path = str(p).lower()
+
+              if "admin-icon" not in name and "admin-icon" not in path:
+                  continue
+
+              try:
+                  with Image.open(p) as test:
+                      test.verify()
+                  candidates.append(p)
+              except Exception:
+                  continue
+
+          if not candidates:
+              raise SystemExit(
+                  "Admin icon not found. Add a valid Admin PNG icon to the ZIP."
+              )
+
+          source = sorted(candidates, key=lambda p: ("(2)" in p, len(str(p))))[0]
+
+          print("Admin icon selected:", source)
+
+          with Image.open(source) as original:
+              img = original.convert("RGBA")
+              img = ImageOps.fit(
+                  img,
+                  (1024, 1024),
+                  method=Image.Resampling.LANCZOS
+              )
+
+          icon_folder = root / "app-icons"
+          icon_folder.mkdir(parents=True, exist_ok=True)
+
+          normalized = icon_folder / "icon.png"
+          img.save(normalized, "PNG")
 
           res = Path("android/app/src/main/res")
 
@@ -294,18 +358,25 @@ jobs:
               target = res / folder
               target.mkdir(parents=True, exist_ok=True)
 
-              icon = img.resize((size, size), Image.Resampling.LANCZOS)
-              icon.save(target / "ic_launcher.png")
-              icon.save(target / "ic_launcher_round.png")
+              resized = img.resize(
+                  (size, size),
+                  Image.Resampling.LANCZOS
+              )
+
+              resized.save(target / "ic_launcher.png")
+              resized.save(target / "ic_launcher_round.png")
 
           adaptive = res / "mipmap-anydpi-v26"
+
           if adaptive.exists():
               shutil.rmtree(adaptive)
 
-          print("Admin icons generated.")
+          print("Admin launcher icons generated.")
+
           PY
 
           STRINGS=android/app/src/main/res/values/strings.xml
+
           mkdir -p android/app/src/main/res/values
 
           if [ ! -f "$STRINGS" ]; then
