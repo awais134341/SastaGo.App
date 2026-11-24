@@ -1,4 +1,4 @@
-name: SastaGo APK Builder
+name: Build SastaGo Customer and Admin APKs
 
 on:
   workflow_dispatch:
@@ -8,100 +8,110 @@ permissions:
 
 jobs:
 
-  # =========================
-  # CUSTOMER APP
-  # =========================
-
   build-customer:
     name: Build Customer APK
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+        continue-on-error: true
 
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '21'
+          java-version: 21
 
-      - name: Setup Android SDK
+      - name: Extract Customer App
         run: |
-          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager | head -n 1)
-          yes | "$SDKMANAGER" --licenses || true
-          "$SDKMANAGER" --install "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+          mkdir customer-project
+          unzip Customer-App.zip -d customer-project
+          cd customer-project/Customer-App
 
-      - name: Extract Customer ZIP
-        shell: bash
-        run: |
-          set -e
+          cp Intro.html index.html
 
-          test -f Customer-App.zip
-
-          mkdir -p customer-src www
-
-          unzip -q Customer-App.zip -d customer-src
-
-          chmod -R u+rwX,go+rX customer-src
-
-          ENTRY=$(find customer-src -type f \( -iname "Intro.html" -o -iname "customer.html" \) | sort | head -n 1)
-
-          if [ -z "$ENTRY" ]; then
-            echo "Customer HTML not found"
-            find customer-src -type f
-            exit 1
-          fi
-
-          SOURCE_DIR=$(dirname "$ENTRY")
-
-          cp -r "$SOURCE_DIR"/. www/
-
-          chmod -R u+rwX,go+rX www/
-
-          if [ -f www/Intro.html ]; then
-            cp www/Intro.html www/index.html
-          elif [ -f www/intro.html ]; then
-            cp www/intro.html www/index.html
-          elif [ -f www/customer.html ]; then
-            cp www/customer.html www/index.html
-          else
-            echo "Customer entry page missing"
-            exit 1
-          fi
-
-          test -f www/index.html
-          test -f www/customer.js
-          test -f www/customer-location.js
-          test -f www/customer-bill-tools.js
-
-          echo "Customer files extracted successfully"
-
-      - name: Install Capacitor 8 and Native Plugins
-        run: |
           npm init -y
 
-          npm install @capacitor/core@8 @capacitor/cli@8 @capacitor/android@8 @capacitor/geolocation@8 @capgo/capacitor-file-sharer@8 @capgo/capacitor-printer@8
+          npm install vite@latest
+          npm install @capacitor/core@8 @capacitor/cli@8 @capacitor/android@8
+          npm install @capacitor/geolocation@8
+          npm install @capgo/capacitor-file-sharer@8.1.16
+          npm install @capgo/capacitor-printer@8.1.11
 
-          printf '%s\n' '{"appId":"pk.sastago.customer","appName":"SastaGo Customer","webDir":"www"}' > capacitor.config.json
+      - name: Configure Customer Vite
+        run: |
+          cd customer-project/Customer-App
+
+          cat > vite.config.js <<'EOF'
+          import { defineConfig } from 'vite';
+
+          export default defineConfig({
+            base: './',
+            build: {
+              outDir: 'dist',
+              emptyOutDir: true,
+              rollupOptions: {
+                external: (id) => id.startsWith('https://www.gstatic.com/')
+              }
+            }
+          });
+          EOF
+
+      - name: Build Customer Web App
+        run: |
+          cd customer-project/Customer-App
+          npx vite build
+
+      - name: Configure Customer Capacitor
+        run: |
+          cd customer-project/Customer-App
+
+          cat > capacitor.config.json <<'EOF'
+          {
+            "appId": "pk.sastago.customer",
+            "appName": "SastaGo",
+            "webDir": "dist",
+            "bundledWebRuntime": false
+          }
+          EOF
 
           npx cap add android
           npx cap sync android
 
-      - name: Ensure Android Location Permissions
+      - name: Add Customer Location Permissions
         run: |
-          MANIFEST=android/app/src/main/AndroidManifest.xml
+          cd customer-project/Customer-App
 
-          sed -i '/<application/i\    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />\n    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />' "$MANIFEST"
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path("android/app/src/main/AndroidManifest.xml")
+          s = p.read_text()
+
+          permissions = [
+              '    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />',
+              '    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />'
+          ]
+
+          for permission in permissions:
+              name = permission.split('"')[1]
+              if name not in s:
+                  s = s.replace('<application', permission + '\n    <application', 1)
+
+          p.write_text(s)
+          PY
 
       - name: Build Customer APK
         run: |
-          cd android
+          cd customer-project/Customer-App/android
           chmod +x gradlew
           ./gradlew assembleDebug
 
@@ -109,88 +119,86 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: SastaGo-Customer-APK
-          path: android/app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
+          path: customer-project/Customer-App/android/app/build/outputs/apk/debug/app-debug.apk
 
-
-  # =========================
-  # ADMIN APP
-  # =========================
 
   build-admin:
     name: Build Admin APK
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
 
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '21'
+          java-version: 21
 
-      - name: Setup Android SDK
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Extract Admin App
         run: |
-          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager | head -n 1)
-          yes | "$SDKMANAGER" --licenses || true
-          "$SDKMANAGER" --install "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+          mkdir admin-project
+          unzip Admin-App.zip -d admin-project
+          cd admin-project/Admin-App
 
-      - name: Extract Admin ZIP
-        shell: bash
-        run: |
-          set -e
+          cp admin.html index.html
 
-          test -f Admin-App.zip
-
-          mkdir -p admin-src www
-
-          unzip -q Admin-App.zip -d admin-src
-
-          chmod -R u+rwX,go+rX admin-src
-
-          ENTRY=$(find admin-src -type f -iname "admin.html" | head -n 1)
-
-          if [ -z "$ENTRY" ]; then
-            echo "Admin HTML file not found"
-            find admin-src -type f
-            exit 1
-          fi
-
-          SOURCE_DIR=$(dirname "$ENTRY")
-
-          cp -r "$SOURCE_DIR"/. www/
-
-          chmod -R u+rwX,go+rX www/
-
-          cp "$ENTRY" www/index.html
-
-          test -f www/index.html
-          test -f www/admin.js
-          test -f www/admin-bill-tools.js
-
-          echo "Admin files extracted successfully"
-
-      - name: Install Capacitor 8
-        run: |
           npm init -y
 
+          npm install vite@latest
           npm install @capacitor/core@8 @capacitor/cli@8 @capacitor/android@8
+          npm install @capgo/capacitor-file-sharer@8.1.16
+          npm install @capgo/capacitor-printer@8.1.11
 
-          printf '%s\n' '{"appId":"pk.sastago.admin","appName":"SastaGo Admin","webDir":"www"}' > capacitor.config.json
+      - name: Configure Admin Vite
+        run: |
+          cd admin-project/Admin-App
+
+          cat > vite.config.js <<'EOF'
+          import { defineConfig } from 'vite';
+
+          export default defineConfig({
+            base: './',
+            build: {
+              outDir: 'dist',
+              emptyOutDir: true,
+              rollupOptions: {
+                external: (id) => id.startsWith('https://www.gstatic.com/')
+              }
+            }
+          });
+          EOF
+
+      - name: Build Admin Web App
+        run: |
+          cd admin-project/Admin-App
+          npx vite build
+
+      - name: Configure Admin Capacitor
+        run: |
+          cd admin-project/Admin-App
+
+          cat > capacitor.config.json <<'EOF'
+          {
+            "appId": "pk.sastago.admin",
+            "appName": "SastaGo Admin",
+            "webDir": "dist",
+            "bundledWebRuntime": false
+          }
+          EOF
 
           npx cap add android
           npx cap sync android
 
       - name: Build Admin APK
         run: |
-          cd android
+          cd admin-project/Admin-App/android
           chmod +x gradlew
           ./gradlew assembleDebug
 
@@ -198,5 +206,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: SastaGo-Admin-APK
-          path: android/app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
+          path: admin-project/Admin-App/android/app/build/outputs/apk/debug/app-debug.apk
