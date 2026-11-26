@@ -12,7 +12,8 @@ permissions:
 jobs:
   # ==========================================
   # CUSTOMER APP BUILD
-  # Repository root must contain SastaGo-Customer-Updated.zip
+  # Repository root ZIP:
+  # SastaGo-Customer-Complete-Optimized.zip
   # ==========================================
   build-customer:
     name: Build SastaGo Customer APK
@@ -42,8 +43,8 @@ jobs:
 
       - name: Extract Customer ZIP
         run: |
-          test -f SastaGo-Customer-Updated.zip || {
-            echo "SastaGo-Customer-Updated.zip missing from repository root"
+          test -f SastaGo-Customer-Complete-Optimized.zip || {
+            echo "SastaGo-Customer-Complete-Optimized.zip missing from repository root"
             exit 1
           }
 
@@ -54,7 +55,7 @@ jobs:
           import zipfile
           from pathlib import Path
 
-          archive = Path("SastaGo-Customer-Updated.zip")
+          archive = Path("SastaGo-Customer-Complete-Optimized.zip")
           root = Path("customer-src").resolve()
           with zipfile.ZipFile(archive) as z:
               for info in z.infolist():
@@ -70,13 +71,11 @@ jobs:
                           dst.write(src.read())
           PYZIP
 
-          ENTRY=$(find customer-src -type f -iname "Intro.html" -print -quit)
-          if [ -z "$ENTRY" ]; then
-            ENTRY=$(find customer-src -type f -iname "customer.html" -print -quit)
-          fi
-          test -n "$ENTRY" || { echo "Customer Intro.html/customer.html missing"; exit 1; }
+          APP_DIR=$(find customer-src -type f -iname "build-customer.sh" -print -quit | xargs -r dirname)
+          test -n "$APP_DIR" || { echo "Customer-App folder/build-customer.sh missing"; exit 1; }
 
-          cp -a "$(dirname "$ENTRY")"/. www/
+          cp -a "$APP_DIR"/. www/
+
           if [ -f www/Intro.html ]; then
             cp www/Intro.html www/index.html
           elif [ -f www/intro.html ]; then
@@ -84,35 +83,43 @@ jobs:
           elif [ -f www/customer.html ]; then
             cp www/customer.html www/index.html
           else
-            echo "Customer entry HTML missing after extraction"
+            echo "Customer Intro.html/customer.html missing"
             exit 1
           fi
 
           test -f www/customer.js
           test -f www/customer-bill-tools.js
           test -f www/customer-location.js
-          test -f www/customer-gps-capacitor.js
+          test -f www/build-customer.sh
+          test -f www/resources/icon.png
 
-      - name: Prepare Customer App Icon
+      - name: Install Customer Capacitor and Bundler Dependencies
         run: |
-          mkdir -p assets
-          ICON=$(find customer-src -type f -iname "sastago-icon.svg" -print -quit)
-          test -n "$ICON" || { echo "sastago-icon.svg missing in Customer ZIP"; exit 1; }
           npm init -y
-          npm install --no-save sharp
-          ICON_FILE="$ICON" node --input-type=module <<'NODE'
-          import sharp from 'sharp';
-          await sharp(process.env.ICON_FILE)
-            .resize(1024, 1024, { fit: 'contain', background: '#ffffff' })
-            .png()
-            .toFile('assets/icon.png');
-          NODE
+          npm install --no-save \
+            @capacitor/core@8 \
+            @capacitor/cli@8 \
+            @capacitor/android@8 \
+            @capacitor/geolocation@8 \
+            @capgo/capacitor-file-sharer@8.1.16 \
+            @capgo/capacitor-printer@8.1.11 \
+            @capacitor/assets \
+            esbuild@^0.25.0
 
-      - name: Install Customer Capacitor Dependencies
+      - name: Bundle Customer JavaScript for Android WebView
         run: |
-          npm install --save-exact             @capacitor/core@8             @capacitor/cli@8             @capacitor/android@8             @capacitor/geolocation@8             @capgo/capacitor-file-sharer@8.1.16             @capgo/capacitor-printer@8.1.11             @capacitor/assets
+          cd www
+          chmod +x build-customer.sh
+          bash ./build-customer.sh
+          test -s customer.bundle.js
+          test -s customer-location.bundle.js
+          test -s customer-bill-tools.bundle.js
 
-          printf '%s\n'             '{"appId":"pk.sastago.customer","appName":"SastaGo","webDir":"www"}'             > capacitor.config.json
+      - name: Configure Customer Capacitor
+        run: |
+          printf '%s\n' \
+            '{"appId":"pk.sastago.customer","appName":"SastaGo","webDir":"www"}' \
+            > capacitor.config.json
 
           npx capacitor-assets generate --android
           npx cap add android
@@ -162,7 +169,8 @@ jobs:
 
   # ==========================================
   # ADMIN APP BUILD
-  # Repository root must contain SastaGo-Admin-Updated.zip
+  # Repository root ZIP:
+  # SastaGo-Admin-With-Bill-PNG-Share-Print.zip
   # ==========================================
   build-admin:
     name: Build SastaGo Admin APK
@@ -192,8 +200,8 @@ jobs:
 
       - name: Extract Admin ZIP
         run: |
-          test -f SastaGo-Admin-Updated.zip || {
-            echo "SastaGo-Admin-Updated.zip missing from repository root"
+          test -f SastaGo-Admin-With-Bill-PNG-Share-Print.zip || {
+            echo "SastaGo-Admin-With-Bill-PNG-Share-Print.zip missing from repository root"
             exit 1
           }
 
@@ -204,7 +212,7 @@ jobs:
           import zipfile
           from pathlib import Path
 
-          archive = Path("SastaGo-Admin-Updated.zip")
+          archive = Path("SastaGo-Admin-With-Bill-PNG-Share-Print.zip")
           root = Path("admin-src").resolve()
           with zipfile.ZipFile(archive) as z:
               for info in z.infolist():
@@ -220,22 +228,22 @@ jobs:
                           dst.write(src.read())
           PYZIP
 
-          ENTRY=$(find admin-src -type f -iname "admin.html" -print -quit)
-          test -n "$ENTRY" || { echo "admin.html missing in Admin ZIP"; exit 1; }
-          cp -a "$(dirname "$ENTRY")"/. www/
-          cp "$ENTRY" www/index.html
+          APP_DIR=$(find admin-src -type f -iname "admin.html" -print -quit | xargs -r dirname)
+          test -n "$APP_DIR" || { echo "Admin-App/admin.html missing"; exit 1; }
+
+          cp -a "$APP_DIR"/. www/
+          cp www/admin.html www/index.html
+
           test -f www/admin.js
           test -f www/admin-bill-tools.js
 
-      - name: Prepare Admin App Icon
-        run: |
-          mkdir -p assets
+          mkdir -p www/resources
           ICON=$(find admin-src -type f -iname "admin-icon.png" -print -quit)
           if [ -n "$ICON" ]; then
-            cp "$ICON" assets/icon.png
+            cp "$ICON" www/resources/icon.png
           else
             ICON=$(find admin-src -type f -iname "sastago-icon.svg" -print -quit)
-            test -n "$ICON" || { echo "admin-icon.png or sastago-icon.svg missing in Admin ZIP"; exit 1; }
+            test -n "$ICON" || { echo "Admin icon or SastaGo SVG icon missing"; exit 1; }
             npm init -y
             npm install --no-save sharp
             ICON_FILE="$ICON" node --input-type=module <<'NODE'
@@ -243,15 +251,57 @@ jobs:
           await sharp(process.env.ICON_FILE)
             .resize(1024, 1024, { fit: 'contain', background: '#ffffff' })
             .png()
-            .toFile('assets/icon.png');
+            .toFile('www/resources/icon.png');
           NODE
           fi
 
-      - name: Install Admin Capacitor Dependencies
-        run: |
-          npm install --save-exact             @capacitor/core@8             @capacitor/cli@8             @capacitor/android@8             @capacitor/geolocation@8             @capgo/capacitor-file-sharer@8.1.16             @capgo/capacitor-printer@8.1.11             @capacitor/assets
+          test -s www/resources/icon.png
 
-          printf '%s\n'             '{"appId":"pk.sastago.admin","appName":"SastaGo Admin","webDir":"www"}'             > capacitor.config.json
+      - name: Install Admin Capacitor and Bundler Dependencies
+        run: |
+          npm init -y
+          npm install --no-save \
+            @capacitor/core@8 \
+            @capacitor/cli@8 \
+            @capacitor/android@8 \
+            @capacitor/geolocation@8 \
+            @capgo/capacitor-file-sharer@8.1.16 \
+            @capgo/capacitor-printer@8.1.11 \
+            @capacitor/assets \
+            esbuild@^0.25.0
+
+      - name: Bundle Admin JavaScript for Android WebView
+        run: |
+          cd www
+          npx esbuild admin.js \
+            --bundle --format=esm --platform=browser --target=es2020 \
+            --external:https://* --outfile=admin.bundle.js
+
+          npx esbuild admin-bill-tools.js \
+            --bundle --format=esm --platform=browser --target=es2020 \
+            --external:https://* --outfile=admin-bill-tools.bundle.js
+
+          python3 - <<'PYHTML'
+          from pathlib import Path
+          p = Path("admin.html")
+          html = p.read_text()
+          html = html.replace('src="./admin-bill-tools.js"', 'src="./admin-bill-tools.bundle.js"')
+          html = html.replace('src="admin-bill-tools.js"', 'src="admin-bill-tools.bundle.js"')
+          html = html.replace('src="./admin.js"', 'src="./admin.bundle.js"')
+          html = html.replace('src="admin.js"', 'src="admin.bundle.js"')
+          p.write_text(html)
+          PYHTML
+
+          test -s admin.bundle.js
+          test -s admin-bill-tools.bundle.js
+          grep -q "admin.bundle.js" admin.html
+          grep -q "admin-bill-tools.bundle.js" admin.html
+
+      - name: Configure Admin Capacitor
+        run: |
+          printf '%s\n' \
+            '{"appId":"pk.sastago.admin","appName":"SastaGo Admin","webDir":"www"}' \
+            > capacitor.config.json
 
           npx capacitor-assets generate --android
           npx cap add android
