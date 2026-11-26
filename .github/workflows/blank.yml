@@ -96,7 +96,7 @@ jobs:
       - name: Install Customer Capacitor and Bundler Dependencies
         run: |
           npm init -y
-          npm install --no-save \
+          npm install --save \
             @capacitor/core@8 \
             @capacitor/cli@8 \
             @capacitor/android@8 \
@@ -104,6 +104,7 @@ jobs:
             @capgo/capacitor-file-sharer@8.1.16 \
             @capgo/capacitor-printer@8.1.11 \
             @capacitor/assets \
+            sharp@^0.34.0 \
             esbuild@^0.25.0
 
       - name: Bundle Customer JavaScript for Android WebView
@@ -115,15 +116,69 @@ jobs:
           test -s customer-location.bundle.js
           test -s customer-bill-tools.bundle.js
 
-      - name: Configure Customer Capacitor
+      - name: Configure Customer Capacitor and Generate Android Launcher Icons
         run: |
           printf '%s\n' \
             '{"appId":"pk.sastago.customer","appName":"SastaGo","webDir":"www"}' \
             > capacitor.config.json
 
-          npx capacitor-assets generate --android
+          # @capacitor/assets reads its source icon from the PROJECT ROOT,
+          # not from www/resources. Use the verified 1024x1024 PNG from the ZIP.
+          mkdir -p assets
+          cp www/resources/icon.png assets/icon.png
+          test "$(file -b assets/icon.png | grep -c 'PNG image data')" -eq 1
+
+          # Create the native Android project first, then generate adaptive and
+          # legacy launcher icon resources into that Android project.
           npx cap add android
+
+          # Generate Android legacy + adaptive launcher icons from this app's
+          # own 1024x1024 PNG. Customer and Admin jobs use different source PNGs.
+          node --input-type=module <<'NODE'
+          import sharp from 'sharp';
+          import fs from 'node:fs';
+          const src = 'assets/icon.png';
+          const res = 'android/app/src/main/res';
+          const sizes = { mdpi: 48, hdpi: 72, xhdpi: 96, xxhdpi: 144, xxxhdpi: 192 };
+          for (const [density, size] of Object.entries(sizes)) {
+            const dir = `${res}/mipmap-${density}`;
+            fs.mkdirSync(dir, { recursive: true });
+            const png = await sharp(src).resize(size, size, { fit: 'contain', background: '#ffffff' }).png().toBuffer();
+            fs.writeFileSync(`${dir}/ic_launcher.png`, png);
+            fs.writeFileSync(`${dir}/ic_launcher_round.png`, png);
+          }
+          fs.mkdirSync(`${res}/drawable`, { recursive: true });
+          await sharp(src).resize(288, 288, { fit: 'contain', background: { r: 255, g: 255, b: 255, alpha: 0 } })
+            .png().toFile(`${res}/drawable/ic_launcher_foreground.png`);
+          fs.mkdirSync(`${res}/values`, { recursive: true });
+          fs.writeFileSync(`${res}/values/ic_launcher_background.xml`,
+            '<?xml version="1.0" encoding="utf-8"?><resources><color name="ic_launcher_background">#FFFFFF</color></resources>');
+          fs.mkdirSync(`${res}/mipmap-anydpi-v26`, { recursive: true });
+          const adaptive = '<?xml version="1.0" encoding="utf-8"?><adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android"><background android:drawable="@color/ic_launcher_background"/><foreground android:drawable="@drawable/ic_launcher_foreground"/></adaptive-icon>';
+          fs.writeFileSync(`${res}/mipmap-anydpi-v26/ic_launcher.xml`, adaptive);
+          fs.writeFileSync(`${res}/mipmap-anydpi-v26/ic_launcher_round.xml`, adaptive);
+          NODE
+
+          # Ensure Android actually points at the generated launcher resources.
+          python3 - <<'PYMANIFEST'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+          path = Path('android/app/src/main/AndroidManifest.xml')
+          ET.register_namespace('android', 'http://schemas.android.com/apk/res/android')
+          A = '{http://schemas.android.com/apk/res/android}'
+          tree = ET.parse(path)
+          app = tree.getroot().find('application')
+          if app is None:
+              raise SystemExit('AndroidManifest application element missing')
+          app.set(A + 'icon', '@mipmap/ic_launcher')
+          app.set(A + 'roundIcon', '@mipmap/ic_launcher_round')
+          tree.write(path, encoding='utf-8', xml_declaration=True)
+          ET.parse(path)
+          PYMANIFEST
+
           npx cap sync android
+          test -s android/app/src/main/res/mipmap-hdpi/ic_launcher.png
+          test -s android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
 
       - name: Configure Customer Android Manifest
         run: |
@@ -260,7 +315,7 @@ jobs:
       - name: Install Admin Capacitor and Bundler Dependencies
         run: |
           npm init -y
-          npm install --no-save \
+          npm install --save \
             @capacitor/core@8 \
             @capacitor/cli@8 \
             @capacitor/android@8 \
@@ -268,6 +323,7 @@ jobs:
             @capgo/capacitor-file-sharer@8.1.16 \
             @capgo/capacitor-printer@8.1.11 \
             @capacitor/assets \
+            sharp@^0.34.0 \
             esbuild@^0.25.0
 
       - name: Bundle Admin JavaScript for Android WebView
@@ -297,15 +353,66 @@ jobs:
           grep -q "admin.bundle.js" admin.html
           grep -q "admin-bill-tools.bundle.js" admin.html
 
-      - name: Configure Admin Capacitor
+      - name: Configure Admin Capacitor and Generate Android Launcher Icons
         run: |
           printf '%s\n' \
             '{"appId":"pk.sastago.admin","appName":"SastaGo Admin","webDir":"www"}' \
             > capacitor.config.json
 
-          npx capacitor-assets generate --android
+          # The Admin PNG is a verified 1024x1024 source icon.
+          mkdir -p assets
+          cp www/resources/icon.png assets/icon.png
+          test "$(file -b assets/icon.png | grep -c 'PNG image data')" -eq 1
+
           npx cap add android
+
+          # Generate Android legacy + adaptive launcher icons from this app's
+          # own 1024x1024 PNG. Customer and Admin jobs use different source PNGs.
+          node --input-type=module <<'NODE'
+          import sharp from 'sharp';
+          import fs from 'node:fs';
+          const src = 'assets/icon.png';
+          const res = 'android/app/src/main/res';
+          const sizes = { mdpi: 48, hdpi: 72, xhdpi: 96, xxhdpi: 144, xxxhdpi: 192 };
+          for (const [density, size] of Object.entries(sizes)) {
+            const dir = `${res}/mipmap-${density}`;
+            fs.mkdirSync(dir, { recursive: true });
+            const png = await sharp(src).resize(size, size, { fit: 'contain', background: '#ffffff' }).png().toBuffer();
+            fs.writeFileSync(`${dir}/ic_launcher.png`, png);
+            fs.writeFileSync(`${dir}/ic_launcher_round.png`, png);
+          }
+          fs.mkdirSync(`${res}/drawable`, { recursive: true });
+          await sharp(src).resize(288, 288, { fit: 'contain', background: { r: 255, g: 255, b: 255, alpha: 0 } })
+            .png().toFile(`${res}/drawable/ic_launcher_foreground.png`);
+          fs.mkdirSync(`${res}/values`, { recursive: true });
+          fs.writeFileSync(`${res}/values/ic_launcher_background.xml`,
+            '<?xml version="1.0" encoding="utf-8"?><resources><color name="ic_launcher_background">#FFFFFF</color></resources>');
+          fs.mkdirSync(`${res}/mipmap-anydpi-v26`, { recursive: true });
+          const adaptive = '<?xml version="1.0" encoding="utf-8"?><adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android"><background android:drawable="@color/ic_launcher_background"/><foreground android:drawable="@drawable/ic_launcher_foreground"/></adaptive-icon>';
+          fs.writeFileSync(`${res}/mipmap-anydpi-v26/ic_launcher.xml`, adaptive);
+          fs.writeFileSync(`${res}/mipmap-anydpi-v26/ic_launcher_round.xml`, adaptive);
+          NODE
+
+          # Ensure Android actually points at the generated launcher resources.
+          python3 - <<'PYMANIFEST'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+          path = Path('android/app/src/main/AndroidManifest.xml')
+          ET.register_namespace('android', 'http://schemas.android.com/apk/res/android')
+          A = '{http://schemas.android.com/apk/res/android}'
+          tree = ET.parse(path)
+          app = tree.getroot().find('application')
+          if app is None:
+              raise SystemExit('AndroidManifest application element missing')
+          app.set(A + 'icon', '@mipmap/ic_launcher')
+          app.set(A + 'roundIcon', '@mipmap/ic_launcher_round')
+          tree.write(path, encoding='utf-8', xml_declaration=True)
+          ET.parse(path)
+          PYMANIFEST
+
           npx cap sync android
+          test -s android/app/src/main/res/mipmap-hdpi/ic_launcher.png
+          test -s android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
 
       - name: Configure Admin Android Manifest
         run: |
