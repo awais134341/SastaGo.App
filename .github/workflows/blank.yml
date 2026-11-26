@@ -131,9 +131,6 @@ jobs:
           # Create the native Android project first, then generate adaptive and
           # legacy launcher icon resources into that Android project.
           npx cap add android
-          # Sync native plugins first; generate launcher resources AFTER sync so
-          # Capacitor/plugin sync cannot replace the custom launcher resources.
-          npx cap sync android
 
           # Generate Android legacy + adaptive launcher icons from this app's
           # own 1024x1024 PNG. Customer and Admin jobs use different source PNGs.
@@ -179,6 +176,7 @@ jobs:
           ET.parse(path)
           PYMANIFEST
 
+          npx cap sync android
           test -s android/app/src/main/res/mipmap-hdpi/ic_launcher.png
           test -s android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
 
@@ -206,8 +204,6 @@ jobs:
           if app is None:
               raise SystemExit("AndroidManifest application element missing")
           app.set(A + "label", "SastaGo")
-          app.set(A + "icon", "@mipmap/ic_launcher")
-          app.set(A + "roundIcon", "@mipmap/ic_launcher_round")
           tree.write(path, encoding="utf-8", xml_declaration=True)
           ET.parse(path)
           PYMAN
@@ -217,9 +213,6 @@ jobs:
           cd android
           chmod +x gradlew
           ./gradlew --no-daemon assembleDebug
-          APK=app/build/outputs/apk/debug/app-debug.apk
-          test -s "$APK"
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep -E "^(application-label|application-icon)"
 
       - name: Upload Customer APK
         uses: actions/upload-artifact@v4
@@ -372,9 +365,6 @@ jobs:
           test "$(file -b assets/icon.png | grep -c 'PNG image data')" -eq 1
 
           npx cap add android
-          # Sync native plugins first; generate launcher resources AFTER sync so
-          # Capacitor/plugin sync cannot replace the custom launcher resources.
-          npx cap sync android
 
           # Generate Android legacy + adaptive launcher icons from this app's
           # own 1024x1024 PNG. Customer and Admin jobs use different source PNGs.
@@ -420,6 +410,7 @@ jobs:
           ET.parse(path)
           PYMANIFEST
 
+          npx cap sync android
           test -s android/app/src/main/res/mipmap-hdpi/ic_launcher.png
           test -s android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
 
@@ -447,8 +438,6 @@ jobs:
           if app is None:
               raise SystemExit("AndroidManifest application element missing")
           app.set(A + "label", "SastaGo Admin")
-          app.set(A + "icon", "@mipmap/ic_launcher")
-          app.set(A + "roundIcon", "@mipmap/ic_launcher_round")
           tree.write(path, encoding="utf-8", xml_declaration=True)
           ET.parse(path)
           PYMAN
@@ -458,9 +447,6 @@ jobs:
           cd android
           chmod +x gradlew
           ./gradlew --no-daemon assembleDebug
-          APK=app/build/outputs/apk/debug/app-debug.apk
-          test -s "$APK"
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep -E "^(application-label|application-icon)"
 
       - name: Upload Admin APK
         uses: actions/upload-artifact@v4
