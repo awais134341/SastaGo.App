@@ -13,7 +13,7 @@ jobs:
   # ==========================================
   # CUSTOMER APP BUILD
   # Repository root ZIP:
-  # SastaGo-Customer-Complete-Optimized.zip
+  # SastaGo-Customer-PNG-Path-Fix.zip
   # ==========================================
   build-customer:
     name: Build SastaGo Customer APK
@@ -43,8 +43,8 @@ jobs:
 
       - name: Extract Customer ZIP
         run: |
-          test -f SastaGo-Customer-Complete-Optimized.zip || {
-            echo "SastaGo-Customer-Complete-Optimized.zip missing from repository root"
+          test -f SastaGo-Customer-PNG-Path-Fix.zip || {
+            echo "SastaGo-Customer-PNG-Path-Fix.zip missing from repository root"
             exit 1
           }
 
@@ -55,7 +55,7 @@ jobs:
           import zipfile
           from pathlib import Path
 
-          archive = Path("SastaGo-Customer-Complete-Optimized.zip")
+          archive = Path("SastaGo-Customer-PNG-Path-Fix.zip")
           root = Path("customer-src").resolve()
           with zipfile.ZipFile(archive) as z:
               for info in z.infolist():
@@ -101,11 +101,15 @@ jobs:
             @capacitor/cli@8 \
             @capacitor/android@8 \
             @capacitor/geolocation@8 \
+            @capacitor/filesystem@8 \
             @capgo/capacitor-file-sharer@8.1.16 \
             @capgo/capacitor-printer@8.1.11 \
             @capacitor/assets \
             sharp@^0.34.0 \
             esbuild@^0.25.0
+          # Install the native plugin inside www as well, so esbuild resolves
+          # the bare import from customer-bill-tools.js when bundling in www.
+          npm install --prefix www --no-save @capacitor/filesystem@8
 
       - name: Bundle Customer JavaScript for Android WebView
         run: |
@@ -232,7 +236,7 @@ jobs:
   # ==========================================
   # ADMIN APP BUILD
   # Repository root ZIP:
-  # SastaGo-Admin-With-Bill-PNG-Share-Print.zip
+  # SastaGo-Admin-PNG-Path-Fix.zip
   # ==========================================
   build-admin:
     name: Build SastaGo Admin APK
@@ -262,8 +266,8 @@ jobs:
 
       - name: Extract Admin ZIP
         run: |
-          test -f SastaGo-Admin-With-Bill-PNG-Share-Print.zip || {
-            echo "SastaGo-Admin-With-Bill-PNG-Share-Print.zip missing from repository root"
+          test -f SastaGo-Admin-PNG-Path-Fix.zip || {
+            echo "SastaGo-Admin-PNG-Path-Fix.zip missing from repository root"
             exit 1
           }
 
@@ -274,7 +278,7 @@ jobs:
           import zipfile
           from pathlib import Path
 
-          archive = Path("SastaGo-Admin-With-Bill-PNG-Share-Print.zip")
+          archive = Path("SastaGo-Admin-PNG-Path-Fix.zip")
           root = Path("admin-src").resolve()
           with zipfile.ZipFile(archive) as z:
               for info in z.infolist():
@@ -327,11 +331,15 @@ jobs:
             @capacitor/cli@8 \
             @capacitor/android@8 \
             @capacitor/geolocation@8 \
+            @capacitor/filesystem@8 \
             @capgo/capacitor-file-sharer@8.1.16 \
             @capgo/capacitor-printer@8.1.11 \
             @capacitor/assets \
             sharp@^0.34.0 \
             esbuild@^0.25.0
+          # Install locally in www so esbuild resolves @capacitor/filesystem
+          # from admin-bill-tools.js during the www bundle step.
+          npm install --prefix www --no-save @capacitor/filesystem@8
 
       - name: Bundle Admin JavaScript for Android WebView
         run: |
