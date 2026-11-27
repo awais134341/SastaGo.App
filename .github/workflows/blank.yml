@@ -23,8 +23,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: npm
-          cache-dependency-path: package-lock.json
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -64,7 +62,7 @@ jobs:
         working-directory: customer-src
         run: |
           npm install
-          npm install --save @capacitor/android@^8 @capacitor/cli@^8
+          npm install --save @capacitor/android@^8 @capacitor/cli@^8 @capacitor/filesystem@^8
           npm install --save-dev @capacitor/assets sharp
 
       - name: Build Customer Web Bundles
