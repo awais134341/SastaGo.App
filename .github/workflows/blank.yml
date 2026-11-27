@@ -26,7 +26,7 @@ jobs:
 
     steps:
 
-      # 1. Download repository source
+      # 1. Checkout repository
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -57,19 +57,18 @@ jobs:
             fi
 
             if [ -z "$ZIP_FILE" ]; then
-              echo "ERROR: Customer-App folder or source ZIP not found."
+              echo "ERROR: Customer-App folder or ZIP not found."
               exit 1
             fi
 
             mkdir -p "$RUNNER_TEMP/sastago-source"
-
             unzip -q "$ZIP_FILE" -d "$RUNNER_TEMP/sastago-source"
 
             APP_DIR="$(find "$RUNNER_TEMP/sastago-source" -type d -name Customer-App -print -quit || true)"
           fi
 
           if [ -z "$APP_DIR" ]; then
-            echo "ERROR: ZIP does not contain Customer-App folder."
+            echo "ERROR: Customer-App folder not found inside source."
             exit 1
           fi
 
@@ -117,24 +116,73 @@ jobs:
         working-directory: ${{ steps.source.outputs.app_dir }}
         run: npm run build:web
 
-      # 9. Add Android platform
+      # 9. Create Capacitor index.html
+      - name: Create web entry point
+        working-directory: ${{ steps.source.outputs.app_dir }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p www
+
+          if [ ! -f www/Intro.html ]; then
+            echo "ERROR: www/Intro.html was not created."
+            exit 1
+          fi
+
+          cat > www/index.html <<'EOF'
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <meta name="theme-color" content="#087b43">
+            <title>SastaGo</title>
+            <meta http-equiv="refresh" content="0;url=Intro.html">
+          </head>
+          <body>
+            <p>Opening SastaGo...</p>
+            <script>
+              window.location.replace("./Intro.html");
+            </script>
+          </body>
+          </html>
+          EOF
+
+          test -s www/index.html
+          echo "Capacitor index.html created successfully."
+
+      # 10. Verify web assets
+      - name: Verify web assets
+        working-directory: ${{ steps.source.outputs.app_dir }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          test -f www/index.html
+          test -f www/Intro.html
+          test -f www/customer.html
+
+          echo "All required web files are present."
+
+      # 11. Add Android platform
       - name: Add Android platform
         working-directory: ${{ steps.source.outputs.app_dir }}
         run: npx cap add android
 
-      # 10. Sync Capacitor
+      # 12. Sync Capacitor
       - name: Sync Capacitor Android project
         working-directory: ${{ steps.source.outputs.app_dir }}
         run: npx cap sync android
 
-      # 11. Build APK
+      # 13. Build APK
       - name: Build debug APK
         working-directory: ${{ steps.source.outputs.app_dir }}/android
         run: |
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
 
-      # 12. Upload APK
+      # 14. Upload APK
       - name: Upload SastaGo Customer APK
         uses: actions/upload-artifact@v4
         with:
