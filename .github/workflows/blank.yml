@@ -99,7 +99,17 @@ jobs:
             if (['www','android','node_modules','.git'].includes(name)) continue;
             fs.cpSync(name, `www/${name}`, {recursive:true});
           }
+          // Capacitor requires www/index.html as its WebView entry point.
+          // Launch the SastaGo intro screen first; it opens customer.html.
+          if (fs.existsSync('www/Intro.html')) {
+            fs.copyFileSync('www/Intro.html', 'www/index.html');
+          } else if (fs.existsSync('www/customer.html')) {
+            fs.copyFileSync('www/customer.html', 'www/index.html');
+          } else {
+            throw new Error('Intro.html/customer.html missing; cannot create www/index.html');
+          }
           NODE
+          test -s www/index.html
           npx cap add android
           npx cap sync android
 
