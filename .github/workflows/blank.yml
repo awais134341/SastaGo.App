@@ -1,0 +1,144 @@
+name: Build SastaGo Customer APK
+
+on:
+  workflow_dispatch:
+
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - '**/*.zip'
+      - 'SastaGo-Customer-Android-Only/**'
+      - '.github/workflows/build-customer-apk.yml'
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: '22'
+  JAVA_VERSION: '21'
+
+jobs:
+  build-customer-apk:
+    name: Build Android Debug APK
+    runs-on: ubuntu-latest
+
+    steps:
+
+      # 1. Download repository source
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Find or extract Customer App
+      - name: Find or extract SastaGo Customer source
+        id: source
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          APP_DIR="$(find . -type d -name Customer-App -print -quit || true)"
+
+          if [ -z "$APP_DIR" ]; then
+            ZIP_FILE=""
+
+            for candidate in \
+              "./SastaGo-Customer-Complete-Updated.zip" \
+              "./Customer-App.zip"; do
+
+              if [ -f "$candidate" ]; then
+                ZIP_FILE="$candidate"
+                break
+              fi
+            done
+
+            if [ -z "$ZIP_FILE" ]; then
+              ZIP_FILE="$(find . -maxdepth 3 -type f -iname '*.zip' -print -quit || true)"
+            fi
+
+            if [ -z "$ZIP_FILE" ]; then
+              echo "ERROR: Customer-App folder or source ZIP not found."
+              exit 1
+            fi
+
+            mkdir -p "$RUNNER_TEMP/sastago-source"
+
+            unzip -q "$ZIP_FILE" -d "$RUNNER_TEMP/sastago-source"
+
+            APP_DIR="$(find "$RUNNER_TEMP/sastago-source" -type d -name Customer-App -print -quit || true)"
+          fi
+
+          if [ -z "$APP_DIR" ]; then
+            echo "ERROR: ZIP does not contain Customer-App folder."
+            exit 1
+          fi
+
+          chmod -R u+rwX,go+rX "$APP_DIR"
+
+          echo "app_dir=$APP_DIR" >> "$GITHUB_OUTPUT"
+
+          echo "Using source folder: $APP_DIR"
+
+      # 3. Setup Node.js
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      # 4. Setup Java
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      # 5. Setup Android SDK
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+
+      # 6. Install Android SDK packages
+      - name: Install Android SDK packages
+        shell: bash
+        run: |
+          sdkmanager --install \
+            "platform-tools" \
+            "platforms;android-36" \
+            "build-tools;36.0.0"
+
+          yes | sdkmanager --licenses >/dev/null || true
+
+      # 7. Install dependencies
+      - name: Install npm dependencies
+        working-directory: ${{ steps.source.outputs.app_dir }}
+        run: npm install
+
+      # 8. Build customer web assets
+      - name: Build customer web assets
+        working-directory: ${{ steps.source.outputs.app_dir }}
+        run: npm run build:web
+
+      # 9. Add Android platform
+      - name: Add Android platform
+        working-directory: ${{ steps.source.outputs.app_dir }}
+        run: npx cap add android
+
+      # 10. Sync Capacitor
+      - name: Sync Capacitor Android project
+        working-directory: ${{ steps.source.outputs.app_dir }}
+        run: npx cap sync android
+
+      # 11. Build APK
+      - name: Build debug APK
+        working-directory: ${{ steps.source.outputs.app_dir }}/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      # 12. Upload APK
+      - name: Upload SastaGo Customer APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: SastaGo-Customer-debug-APK
+          path: ${{ steps.source.outputs.app_dir }}/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
