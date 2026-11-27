@@ -50,12 +50,13 @@ jobs:
           java-version: '21'
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools'
 
       - name: Install Android SDK packages
         run: |
-          sdkmanager --install "platform-tools" "platforms;android-35" "build-tools;35.0.0"
-          yes | sdkmanager --licenses
+          sdkmanager --install "platforms;android-35" "build-tools;35.0.0"
 
       - name: Install Customer App dependencies
         run: npm install --no-audit --no-fund
@@ -63,13 +64,13 @@ jobs:
       - name: Build web assets
         run: npm run build:web
 
-      - name: Create Android project if it does not exist
+      - name: Create Android project if missing
         run: |
           if [ ! -d android ]; then
             npx cap add android
           fi
 
-      - name: Sync Capacitor Android project
+      - name: Sync Capacitor Android
         run: npx cap sync android
 
       - name: Verify Android project
@@ -78,7 +79,7 @@ jobs:
           test -d www
           test -s www/index.html
 
-      - name: Build debug APK
+      - name: Build Customer APK
         working-directory: Customer-App/android
         run: |
           chmod +x gradlew
