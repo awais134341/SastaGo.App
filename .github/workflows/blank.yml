@@ -7,14 +7,14 @@ on:
       - main
       - master
     paths:
-      - 'Customer-App/**'
+      - 'SastaGo-Customer-Android-Only/Customer-App/**'
       - '.github/workflows/android-customer-build.yml'
   pull_request:
     branches:
       - main
       - master
     paths:
-      - 'Customer-App/**'
+      - 'SastaGo-Customer-Android-Only/Customer-App/**'
       - '.github/workflows/android-customer-build.yml'
 
 permissions:
@@ -30,13 +30,18 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
-    defaults:
-      run:
-        working-directory: Customer-App
+    env:
+      APP_DIR: SastaGo-Customer-Android-Only/Customer-App
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Verify Customer App folder
+        run: |
+          test -d "$APP_DIR"
+          test -f "$APP_DIR/package.json"
+          echo "Customer App folder found."
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -59,29 +64,35 @@ jobs:
           sdkmanager --install "platforms;android-35" "build-tools;35.0.0"
 
       - name: Install Customer App dependencies
-        run: npm install --no-audit --no-fund
+        run: |
+          cd "$APP_DIR"
+          npm install --no-audit --no-fund
 
       - name: Build web assets
-        run: npm run build:web
+        run: |
+          cd "$APP_DIR"
+          npm run build:web
 
       - name: Create Android project if missing
         run: |
+          cd "$APP_DIR"
           if [ ! -d android ]; then
             npx cap add android
           fi
 
       - name: Sync Capacitor Android
-        run: npx cap sync android
+        run: |
+          cd "$APP_DIR"
+          npx cap sync android
 
       - name: Verify Android project
         run: |
-          test -f android/gradlew
-          test -d www
-          test -s www/index.html
+          test -f "$APP_DIR/android/gradlew"
+          test -s "$APP_DIR/www/index.html"
 
       - name: Build Customer APK
-        working-directory: Customer-App/android
         run: |
+          cd "$APP_DIR/android"
           chmod +x gradlew
           ./gradlew --no-daemon --stacktrace assembleDebug
 
@@ -89,6 +100,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: SastaGo-Customer-debug-apk
-          path: Customer-App/android/app/build/outputs/apk/debug/app-debug.apk
+          path: SastaGo-Customer-Android-Only/Customer-App/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
