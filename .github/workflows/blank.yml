@@ -21,55 +21,59 @@ jobs:
     timeout-minutes: 45
 
     steps:
-      - name: Download Repository Files
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
       - name: Extract Customer App ZIP
         shell: bash
         run: |
           ZIP_FILE=$(find . -maxdepth 2 -type f \
-            -iname 'Customer-App*.zip' | head -1)
+            -iname 'Customer-App.zip' | head -1)
 
           if [ -z "$ZIP_FILE" ]; then
-            echo "ERROR: Customer-App.zip not found!"
-            find . -maxdepth 2 -type f
+            echo "Customer-App.zip not found!"
             exit 1
           fi
 
           mkdir -p extracted
-          echo "Extracting $ZIP_FILE"
           unzip -q "$ZIP_FILE" -d extracted
+
+          # Fix ZIP file permissions
+          chmod -R u+rwX,go+rX extracted
+
+          echo "ZIP extracted and permissions fixed."
 
       - name: Locate Customer App
         shell: bash
         run: |
-          APP_DIR=""
+          APP_DIR="extracted/Customer-App"
 
-          while IFS= read -r FILE; do
-            DIR="$(dirname "$FILE")"
+          if [ ! -f "$APP_DIR/package.json" ]; then
+            echo "package.json not found!"
+            find extracted -maxdepth 3 -type f
+            exit 1
+          fi
 
-            if grep -q '"build:web"' "$FILE" &&
-               [ -f "$DIR/capacitor.config.json" ]; then
-              APP_DIR="$DIR"
-              break
-            fi
-          done < <(find extracted -type f -name package.json)
+          if [ ! -f "$APP_DIR/capacitor.config.json" ]; then
+            echo "Capacitor configuration missing!"
+            exit 1
+          fi
 
-          if [ -z "$APP_DIR" ]; then
-            echo "Customer App files not found!"
-            find extracted -maxdepth 5 -type f
+          if ! grep -q '"build:web"' "$APP_DIR/package.json"; then
+            echo "build:web script missing from package.json!"
+            cat "$APP_DIR/package.json"
             exit 1
           fi
 
           echo "APP_DIR=$APP_DIR" >> "$GITHUB_ENV"
-          echo "Found Customer App: $APP_DIR"
+          echo "Customer App found successfully."
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
 
-      - name: Setup Java
+      - name: Setup Java 21
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -117,12 +121,12 @@ jobs:
         run: |
           cd "$APP_DIR/android"
           chmod +x gradlew
-          ./gradlew --no-daemon assembleDebug
+          ./gradlew --no-daemon --stacktrace assembleDebug
 
       - name: Upload Customer APK
         uses: actions/upload-artifact@v4
         with:
           name: SastaGo-Customer-APK
-          path: ${{ env.APP_DIR }}/android/app/build/outputs/apk/debug/app-debug.apk
+          path: extracted/Customer-App/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
