@@ -28,7 +28,23 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Find Customer App folder automatically
+      - name: Extract Customer App ZIP
+        shell: bash
+        run: |
+          mkdir -p extracted
+
+          ZIP_FILE="$(find . -maxdepth 2 -type f -iname 'SastaGo-Customer-Complete-Updated.zip' | head -1)"
+
+          if [ -z "$ZIP_FILE" ]; then
+            echo "Customer ZIP file not found."
+            find . -maxdepth 3 -type f
+            exit 1
+          fi
+
+          echo "Extracting: $ZIP_FILE"
+          unzip -q "$ZIP_FILE" -d extracted
+
+      - name: Find Customer App automatically
         shell: bash
         run: |
           APP_DIR=""
@@ -41,12 +57,11 @@ jobs:
               APP_DIR="$DIR"
               break
             fi
-          done < <(find . -type f -name package.json)
+          done < <(find extracted -type f -name package.json)
 
           if [ -z "$APP_DIR" ]; then
-            echo "Customer App folder not found."
-            echo "Repository folders:"
-            find . -maxdepth 5 -type f | head -200
+            echo "Customer App not found inside ZIP."
+            find extracted -maxdepth 5 -type f | head -200
             exit 1
           fi
 
