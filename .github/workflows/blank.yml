@@ -6,16 +6,10 @@ on:
     branches:
       - main
       - master
-    paths:
-      - 'SastaGo-Customer-Android-Only/Customer-App/**'
-      - '.github/workflows/android-customer-build.yml'
   pull_request:
     branches:
       - main
       - master
-    paths:
-      - 'SastaGo-Customer-Android-Only/Customer-App/**'
-      - '.github/workflows/android-customer-build.yml'
 
 permissions:
   contents: read
@@ -30,18 +24,34 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
-    env:
-      APP_DIR: SastaGo-Customer-Android-Only/Customer-App
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Verify Customer App folder
+      - name: Find Customer App folder automatically
+        shell: bash
         run: |
-          test -d "$APP_DIR"
-          test -f "$APP_DIR/package.json"
-          echo "Customer App folder found."
+          APP_DIR=""
+
+          while IFS= read -r file; do
+            DIR="$(dirname "$file")"
+
+            if grep -q '"build:web"' "$file" &&
+               [ -f "$DIR/capacitor.config.json" ]; then
+              APP_DIR="$DIR"
+              break
+            fi
+          done < <(find . -type f -name package.json)
+
+          if [ -z "$APP_DIR" ]; then
+            echo "Customer App folder not found."
+            echo "Repository folders:"
+            find . -maxdepth 5 -type f | head -200
+            exit 1
+          fi
+
+          echo "APP_DIR=$APP_DIR" >> "$GITHUB_ENV"
+          echo "Customer App found: $APP_DIR"
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -63,7 +73,7 @@ jobs:
         run: |
           sdkmanager --install "platforms;android-35" "build-tools;35.0.0"
 
-      - name: Install Customer App dependencies
+      - name: Install dependencies
         run: |
           cd "$APP_DIR"
           npm install --no-audit --no-fund
@@ -100,6 +110,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: SastaGo-Customer-debug-apk
-          path: SastaGo-Customer-Android-Only/Customer-App/android/app/build/outputs/apk/debug/app-debug.apk
+          path: ${{ env.APP_DIR }}/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
