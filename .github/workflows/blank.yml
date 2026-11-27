@@ -1,12 +1,8 @@
-name: SastaGo Customer Android Build
+name: SastaGo Customer App APK Build
 
 on:
   workflow_dispatch:
   push:
-    branches:
-      - main
-      - master
-  pull_request:
     branches:
       - main
       - master
@@ -15,44 +11,44 @@ permissions:
   contents: read
 
 concurrency:
-  group: sastago-customer-android-${{ github.ref }}
+  group: sastago-customer-build-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  build-customer-apk:
+  build:
     name: Build SastaGo Customer APK
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
     steps:
-      - name: Checkout repository
+      - name: Download Repository Files
         uses: actions/checkout@v4
 
       - name: Extract Customer App ZIP
         shell: bash
         run: |
-          mkdir -p extracted
-
-          ZIP_FILE="$(find . -maxdepth 2 -type f -iname 'SastaGo-Customer-Complete-Updated.zip' | head -1)"
+          ZIP_FILE=$(find . -maxdepth 2 -type f \
+            -iname 'Customer-App*.zip' | head -1)
 
           if [ -z "$ZIP_FILE" ]; then
-            echo "Customer ZIP file not found."
-            find . -maxdepth 3 -type f
+            echo "ERROR: Customer-App.zip not found!"
+            find . -maxdepth 2 -type f
             exit 1
           fi
 
-          echo "Extracting: $ZIP_FILE"
+          mkdir -p extracted
+          echo "Extracting $ZIP_FILE"
           unzip -q "$ZIP_FILE" -d extracted
 
-      - name: Find Customer App automatically
+      - name: Locate Customer App
         shell: bash
         run: |
           APP_DIR=""
 
-          while IFS= read -r file; do
-            DIR="$(dirname "$file")"
+          while IFS= read -r FILE; do
+            DIR="$(dirname "$FILE")"
 
-            if grep -q '"build:web"' "$file" &&
+            if grep -q '"build:web"' "$FILE" &&
                [ -f "$DIR/capacitor.config.json" ]; then
               APP_DIR="$DIR"
               break
@@ -60,57 +56,59 @@ jobs:
           done < <(find extracted -type f -name package.json)
 
           if [ -z "$APP_DIR" ]; then
-            echo "Customer App not found inside ZIP."
-            find extracted -maxdepth 5 -type f | head -200
+            echo "Customer App files not found!"
+            find extracted -maxdepth 5 -type f
             exit 1
           fi
 
           echo "APP_DIR=$APP_DIR" >> "$GITHUB_ENV"
-          echo "Customer App found: $APP_DIR"
+          echo "Found Customer App: $APP_DIR"
 
-      - name: Set up Node.js
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
 
-      - name: Set up Java 21
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '21'
 
-      - name: Set up Android SDK
+      - name: Setup Android SDK
         uses: android-actions/setup-android@v4
         with:
           packages: 'platform-tools'
 
-      - name: Install Android SDK packages
+      - name: Install Android SDK Packages
         run: |
-          sdkmanager --install "platforms;android-35" "build-tools;35.0.0"
+          sdkmanager --install \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
 
-      - name: Install dependencies
+      - name: Install App Dependencies
         run: |
           cd "$APP_DIR"
           npm install --no-audit --no-fund
 
-      - name: Build web assets
+      - name: Build Web App
         run: |
           cd "$APP_DIR"
           npm run build:web
 
-      - name: Create Android project if missing
+      - name: Add Android Platform
         run: |
           cd "$APP_DIR"
           if [ ! -d android ]; then
             npx cap add android
           fi
 
-      - name: Sync Capacitor Android
+      - name: Sync Android Project
         run: |
           cd "$APP_DIR"
           npx cap sync android
 
-      - name: Verify Android project
+      - name: Verify Android Project
         run: |
           test -f "$APP_DIR/android/gradlew"
           test -s "$APP_DIR/www/index.html"
@@ -119,12 +117,12 @@ jobs:
         run: |
           cd "$APP_DIR/android"
           chmod +x gradlew
-          ./gradlew --no-daemon --stacktrace assembleDebug
+          ./gradlew --no-daemon assembleDebug
 
       - name: Upload Customer APK
         uses: actions/upload-artifact@v4
         with:
-          name: SastaGo-Customer-debug-apk
+          name: SastaGo-Customer-APK
           path: ${{ env.APP_DIR }}/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
