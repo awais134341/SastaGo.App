@@ -80,13 +80,10 @@ jobs:
           echo "Using source folder: $APP_DIR"
 
       # 3. Setup Node.js
-      - name: Set up Node.js
+      -       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: ${{ steps.source.outputs.app_dir }}/package.json
-
       # 4. Setup Java
       - name: Set up Java
         uses: actions/setup-java@v4
