@@ -8,55 +8,55 @@ on:
 
 jobs:
   build:
-    name: Build Customer APK
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Get Source Code
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # 2. Setup Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
 
-      # 3. Install Dependencies
       - name: Install Dependencies
         run: npm install
 
-      # 4. Build Web App
-      - name: Build Web App
-        run: npm run build
+      - name: Build Customer App
+        shell: bash
+        run: |
+          if node -e "process.exit(require('./package.json').scripts?.build ? 0 : 1)"; then
+            npm run build
+          elif [ -f build-customer.sh ]; then
+            chmod +x build-customer.sh
+            ./build-customer.sh
+          else
+            echo "ERROR: No build script found"
+            exit 1
+          fi
 
-      # 5. Setup Java
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 21
 
-      # 6. Setup Android SDK
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      # 7. Install Android Platform
-      - name: Install Android Platform
-        run: sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+      - name: Install Android SDK Components
+        run: |
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
-      # 8. Capacitor Sync
-      - name: Sync Capacitor
+      - name: Capacitor Sync
         run: npx cap sync android
 
-      # 9. Build Debug APK
       - name: Build APK
         run: |
           cd android
           chmod +x gradlew
           ./gradlew assembleDebug
 
-      # 10. Upload APK
       - name: Upload Customer APK
         uses: actions/upload-artifact@v4
         with:
