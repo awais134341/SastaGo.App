@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   build:
-    name: Build Customer App
+    name: Build SastaGo Customer APK
     runs-on: ubuntu-latest
 
     steps:
@@ -22,17 +22,14 @@ jobs:
       - name: Extract Customer-App ZIP
         run: |
           unzip -q Customer-App.zip -d extracted
-
-      - name: Fix File Permissions
-        run: |
           chmod -R u+rwX,go+rX extracted
 
-      - name: Find Project Folder
+      - name: Find Customer Project
         run: |
-          PROJECT_FILE=$(find extracted -name package.json -not -path "*/node_modules/*" | head -n 1)
+          PROJECT_FILE=$(find extracted -name package.json | head -n 1)
 
           if [ -z "$PROJECT_FILE" ]; then
-            echo "ERROR: package.json not found!"
+            echo "package.json not found!"
             exit 1
           fi
 
@@ -44,40 +41,36 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 17
+          java-version: 21
 
       - name: Install Dependencies
         run: |
           cd "$PROJECT_DIR"
-          if [ -f package-lock.json ]; then
-            npm ci
-          else
-            npm install
-          fi
+          npm install
 
-      - name: Build Customer App
+      - name: Build Web App
         run: |
           cd "$PROJECT_DIR"
-          npm run build
+          npm run build:web
 
-      - name: Sync Android
+      - name: Sync Capacitor Android
         run: |
           cd "$PROJECT_DIR"
           npx cap sync android
 
-      - name: Build APK
+      - name: Build Android APK
         run: |
           cd "$PROJECT_DIR/android"
           chmod +x gradlew
           ./gradlew assembleDebug
 
-      - name: Upload Customer APK
+      - name: Upload SastaGo Customer APK
         uses: actions/upload-artifact@v4
         with:
           name: SastaGo-Customer-APK
