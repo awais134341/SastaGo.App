@@ -1,66 +1,66 @@
-name: SastaGo Customer APK Build
+name: Build SastaGo Customer APK
 
 on:
   workflow_dispatch:
   push:
     branches:
       - main
+      - master
+
+permissions:
+  contents: read
 
 jobs:
-  build:
+  build-customer-apk:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
 
     steps:
-      - name: Checkout Repository
+      - name: Checkout source
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
-      - name: Install Dependencies
-        run: npm install
-
-      - name: Build Customer App
-        shell: bash
-        run: |
-          if node -e "process.exit(require('./package.json').scripts?.build ? 0 : 1)"; then
-            npm run build
-          elif [ -f build-customer.sh ]; then
-            chmod +x build-customer.sh
-            ./build-customer.sh
-          else
-            echo "ERROR: No build script found"
-            exit 1
-          fi
-
-      - name: Setup Java
+      - name: Set up Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 21
+          java-version: '21'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools'
 
-      - name: Install Android SDK Components
+      - name: Install npm dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Build customer web app
+        run: npm run build:web
+
+      - name: Add or sync Android project
+        shell: bash
         run: |
-          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+          if [ ! -d android ]; then
+            npx cap add android
+          fi
 
-      - name: Capacitor Sync
-        run: npx cap sync android
+          npx cap sync android
 
-      - name: Build APK
+      - name: Build debug APK
+        working-directory: android
         run: |
-          cd android
           chmod +x gradlew
-          ./gradlew assembleDebug
+          ./gradlew --no-daemon --stacktrace assembleDebug
+          test -s app/build/outputs/apk/debug/app-debug.apk
 
-      - name: Upload Customer APK
+      - name: Upload SastaGo Customer APK
         uses: actions/upload-artifact@v4
         with:
           name: SastaGo-Customer-APK
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 14
