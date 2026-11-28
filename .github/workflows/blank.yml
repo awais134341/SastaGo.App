@@ -8,44 +8,59 @@ on:
 
 jobs:
   build:
+    name: Build Customer APK
     runs-on: ubuntu-latest
 
     steps:
+      # 1. Get Source Code
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      # 2. Setup Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
 
+      # 3. Install Dependencies
       - name: Install Dependencies
         run: npm install
 
+      # 4. Build Web App
       - name: Build Web App
         run: npm run build
 
+      # 5. Setup Java
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 21
 
-      - name: Setup Android
+      # 6. Setup Android SDK
+      - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
+      # 7. Install Android Platform
+      - name: Install Android Platform
+        run: sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+
+      # 8. Capacitor Sync
       - name: Sync Capacitor
         run: npx cap sync android
 
+      # 9. Build Debug APK
       - name: Build APK
         run: |
           cd android
           chmod +x gradlew
           ./gradlew assembleDebug
 
-      - name: Upload APK
+      # 10. Upload APK
+      - name: Upload Customer APK
         uses: actions/upload-artifact@v4
         with:
           name: SastaGo-Customer-APK
           path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 30
