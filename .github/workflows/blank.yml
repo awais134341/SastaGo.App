@@ -1,192 +1,80 @@
-name: Build SastaGo Customer APK
+name: SastaGo Customer APK Build
 
 on:
-  workflow_dispatch:
-
   push:
     branches:
       - main
-      - master
-    paths:
-      - '**/*.zip'
-      - 'SastaGo-Customer-Android-Only/**'
-      - '.github/workflows/build-customer-apk.yml'
+
+  workflow_dispatch:
 
 permissions:
   contents: read
 
-env:
-  NODE_VERSION: '22'
-  JAVA_VERSION: '21'
-
 jobs:
-  build-customer-apk:
-    name: Build Android Debug APK
+  build:
+    name: Build Customer App
     runs-on: ubuntu-latest
 
     steps:
-
-      # 1. Checkout repository
-      - name: Checkout repository
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # 2. Find or extract Customer App
-      - name: Find or extract SastaGo Customer source
-        id: source
-        shell: bash
+      - name: Extract Customer-App ZIP
         run: |
-          set -euo pipefail
+          unzip -q Customer-App.zip -d extracted
 
-          APP_DIR="$(find . -type d -name Customer-App -print -quit || true)"
+      - name: Find Project Folder
+        run: |
+          PROJECT_FILE=$(find extracted -name package.json -not -path "*/node_modules/*" | head -n 1)
 
-          if [ -z "$APP_DIR" ]; then
-            ZIP_FILE=""
-
-            for candidate in \
-              "./SastaGo-Customer-Complete-Updated.zip" \
-              "./Customer-App.zip"; do
-
-              if [ -f "$candidate" ]; then
-                ZIP_FILE="$candidate"
-                break
-              fi
-            done
-
-            if [ -z "$ZIP_FILE" ]; then
-              ZIP_FILE="$(find . -maxdepth 3 -type f -iname '*.zip' -print -quit || true)"
-            fi
-
-            if [ -z "$ZIP_FILE" ]; then
-              echo "ERROR: Customer-App folder or ZIP not found."
-              exit 1
-            fi
-
-            mkdir -p "$RUNNER_TEMP/sastago-source"
-            unzip -q "$ZIP_FILE" -d "$RUNNER_TEMP/sastago-source"
-
-            APP_DIR="$(find "$RUNNER_TEMP/sastago-source" -type d -name Customer-App -print -quit || true)"
-          fi
-
-          if [ -z "$APP_DIR" ]; then
-            echo "ERROR: Customer-App folder not found inside source."
+          if [ -z "$PROJECT_FILE" ]; then
+            echo "package.json not found in ZIP file"
             exit 1
           fi
 
-          chmod -R u+rwX,go+rX "$APP_DIR"
+          PROJECT_DIR=$(dirname "$PROJECT_FILE")
+          echo "PROJECT_DIR=$PROJECT_DIR" >> $GITHUB_ENV
 
-          echo "app_dir=$APP_DIR" >> "$GITHUB_OUTPUT"
-
-          echo "Using source folder: $APP_DIR"
-
-      # 3. Setup Node.js
-      - name: Set up Node.js
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: 20
 
-      # 4. Setup Java
-      - name: Set up Java
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: ${{ env.JAVA_VERSION }}
+          java-version: 17
 
-      # 5. Setup Android SDK
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v4
-
-      # 6. Install Android SDK packages
-      - name: Install Android SDK packages
-        shell: bash
+      - name: Install Dependencies
         run: |
-          sdkmanager --install \
-            "platform-tools" \
-            "platforms;android-36" \
-            "build-tools;36.0.0"
-
-          yes | sdkmanager --licenses >/dev/null || true
-
-      # 7. Install dependencies
-      - name: Install npm dependencies
-        working-directory: ${{ steps.source.outputs.app_dir }}
-        run: npm install
-
-      # 8. Build customer web assets
-      - name: Build customer web assets
-        working-directory: ${{ steps.source.outputs.app_dir }}
-        run: npm run build:web
-
-      # 9. Create Capacitor index.html
-      - name: Create web entry point
-        working-directory: ${{ steps.source.outputs.app_dir }}
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          mkdir -p www
-
-          if [ ! -f www/Intro.html ]; then
-            echo "ERROR: www/Intro.html was not created."
-            exit 1
+          cd "$PROJECT_DIR"
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
           fi
 
-          cat > www/index.html <<'EOF'
-          <!DOCTYPE html>
-          <html lang="en">
-          <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <meta name="theme-color" content="#087b43">
-            <title>SastaGo</title>
-            <meta http-equiv="refresh" content="0;url=Intro.html">
-          </head>
-          <body>
-            <p>Opening SastaGo...</p>
-            <script>
-              window.location.replace("./Intro.html");
-            </script>
-          </body>
-          </html>
-          EOF
-
-          test -s www/index.html
-          echo "Capacitor index.html created successfully."
-
-      # 10. Verify web assets
-      - name: Verify web assets
-        working-directory: ${{ steps.source.outputs.app_dir }}
-        shell: bash
+      - name: Build Customer App
         run: |
-          set -euo pipefail
+          cd "$PROJECT_DIR"
+          npm run build
 
-          test -f www/index.html
-          test -f www/Intro.html
-          test -f www/customer.html
-
-          echo "All required web files are present."
-
-      # 11. Add Android platform
-      - name: Add Android platform
-        working-directory: ${{ steps.source.outputs.app_dir }}
-        run: npx cap add android
-
-      # 12. Sync Capacitor
-      - name: Sync Capacitor Android project
-        working-directory: ${{ steps.source.outputs.app_dir }}
-        run: npx cap sync android
-
-      # 13. Build APK
-      - name: Build debug APK
-        working-directory: ${{ steps.source.outputs.app_dir }}/android
+      - name: Sync Android
         run: |
+          cd "$PROJECT_DIR"
+          npx cap sync android
+
+      - name: Build APK
+        run: |
+          cd "$PROJECT_DIR/android"
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon
+          ./gradlew assembleDebug
 
-      # 14. Upload APK
-      - name: Upload SastaGo Customer APK
+      - name: Upload Customer APK
         uses: actions/upload-artifact@v4
         with:
-          name: SastaGo-Customer-debug-APK
-          path: ${{ steps.source.outputs.app_dir }}/android/app/build/outputs/apk/debug/app-debug.apk
+          name: SastaGo-Customer-APK
+          path: ${{ env.PROJECT_DIR }}/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 30
