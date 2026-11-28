@@ -1,119 +1,51 @@
 name: SastaGo Customer APK Build
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
 
-  workflow_dispatch:
-
-permissions:
-  contents: read
-
 jobs:
   build:
-    name: Build SastaGo Customer APK
     runs-on: ubuntu-latest
 
     steps:
-      # Download repository
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # Extract ZIP
-      - name: Extract Customer App
-        run: |
-          unzip -q Customer-App.zip -d extracted
-          chmod -R u+rwX,go+rX extracted
-
-      # Find project
-      - name: Find Customer Project
-        run: |
-          PROJECT_FILE=$(find extracted -name package.json \
-            -not -path "*/node_modules/*" | head -n 1)
-
-          if [ -z "$PROJECT_FILE" ]; then
-            echo "ERROR: package.json not found"
-            exit 1
-          fi
-
-          PROJECT_DIR=$(dirname "$PROJECT_FILE")
-
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-
-          echo "Project found: $PROJECT_DIR"
-
-      # Setup Node
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 20
+          cache: npm
 
-      # Setup Java
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Build Web App
+        run: npm run build
+
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 21
 
-      # Install dependencies
-      - name: Install Dependencies
-        run: |
-          cd "$PROJECT_DIR"
-          npm install
+      - name: Setup Android
+        uses: android-actions/setup-android@v3
 
-      # Build web application
-      - name: Build Customer Web App
-        run: |
-          cd "$PROJECT_DIR"
-          npm run build:web
-
-      # Check Capacitor configuration
-      - name: Check Capacitor Configuration
-        run: |
-          cd "$PROJECT_DIR"
-
-          if [ ! -f capacitor.config.json ]; then
-            echo "ERROR: capacitor.config.json missing"
-            exit 1
-          fi
-
-          if [ ! -s www/index.html ]; then
-            echo "ERROR: www/index.html missing"
-            exit 1
-          fi
-
-      # Add Android platform
-      - name: Add Android Platform
-        run: |
-          cd "$PROJECT_DIR"
-
-          if [ ! -f android/app/build.gradle ] && \
-             [ ! -f android/app/build.gradle.kts ]; then
-            rm -rf android
-            npx cap add android
-          fi
-
-      # Sync Capacitor
       - name: Sync Capacitor
-        run: |
-          cd "$PROJECT_DIR"
-          npx cap sync android
+        run: npx cap sync android
 
-      # Build APK
-      - name: Build Android APK
+      - name: Build APK
         run: |
-          cd "$PROJECT_DIR/android"
-
+          cd android
           chmod +x gradlew
-
           ./gradlew assembleDebug
 
-      # Upload APK
-      - name: Upload SastaGo Customer APK
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: SastaGo-Customer-APK
-          path: ${{ env.PROJECT_DIR }}/android/app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
-          retention-days: 30
+          path: android/app/build/outputs/apk/debug/app-debug.apk
